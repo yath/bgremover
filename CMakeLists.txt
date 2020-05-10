@@ -24,6 +24,7 @@ set(TFLite_LIBS
 
 find_package(OpenCV REQUIRED)
 
+# the order matters because of the flags namespace. determined by trial and error.
 add_subdirectory(glog)
 add_subdirectory(gflags)
 

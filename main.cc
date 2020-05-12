@@ -2,6 +2,7 @@
 #include <vector>
 #include <numeric>
 #include <algorithm>
+#include <chrono>
 
 #include "gflags/gflags.h"
 #include "glog/logging.h"
@@ -12,7 +13,7 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
 
-DEFINE_string(model_filename, "../deeplabv3v1_meta.tflite", "model filename");
+DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "model filename");
 
 const char *label_names[] = {
     "background",
@@ -101,18 +102,28 @@ public:
         cv::cvtColor(small, input_int, cv::COLOR_BGR2RGB);
 
         cv::Mat input_float;
-        input_int.convertTo(input_float, CV_32FC3);
-        input_float -= 127.5;
-        input_float /= 127.5;
+        input_int.convertTo(input_float, CV_32FC3, 1./255, -.5);
+#if 0
+        LOG(INFO) << "input_float.size: " << input_float.size << ", type: " << input_float.type();
+        LOG(INFO) << "input_float[0]: " << input_float;
+        exit(0);
+#endif
 
         CHECK_EQ(input_float.elemSize(), sizeof(float)*3);
 
         TfLiteTensorCopyFromBuffer(input_, (const void*)input_float.ptr<float>(),
                 width_*height_*sizeof(float)*3);
+
+        auto start = std::chrono::steady_clock::now();
         TfLiteInterpreterInvoke(interpreter_);
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> diff = end-start;
+        LOG(INFO) << "Inference time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count() << "ms";
 
         CHECK_EQ(TfLiteTensorByteSize(output_), width_*height_*nlabels_*sizeof(float));
         float *output = (float*)TfLiteTensorData(output_);
+
+        int label_count[nlabels_] = {0};
 
         for (int y = 0; y < height_; y++) {
             float *row = &output[y * width_ * nlabels_];
@@ -134,8 +145,16 @@ public:
 
                 if (labels[0] != 15)
                     small.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 0, 0);
+                label_count[labels[0]]++;
             }
         }
+#if 0
+        LOG(INFO) << "Label count for frame:";
+        for (int i = 0; i < nlabels_; i++) {
+            if (label_count[i])
+                LOG(INFO) << label_names[i] << ": " << label_count[i];
+        }
+#endif
         cv::imshow("foo", small);
 
 #ifdef DEBUG_LABELS

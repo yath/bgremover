@@ -86,7 +86,10 @@ public:
         TfLiteInterpreterOptionsSetErrorReporter(options_,
                 (void(*)(void *, const char *, va_list))std::vfprintf, (void*)stderr);
 #ifdef WITH_GL
-        gpu_delegate_ = CHECK_NOTNULL(TfLiteGpuDelegateV2Create(nullptr));
+        auto delegate_opts = TfLiteGpuDelegateOptionsV2Default();
+        delegate_opts.inference_preference = TFLITE_GPU_INFERENCE_PREFERENCE_SUSTAINED_SPEED;
+        delegate_opts.inference_priority1 = TFLITE_GPU_INFERENCE_PRIORITY_MIN_LATENCY;
+        gpu_delegate_ = CHECK_NOTNULL(TfLiteGpuDelegateV2Create(&delegate_opts));
         TfLiteInterpreterOptionsAddDelegate(options_, gpu_delegate_);
 #endif
 

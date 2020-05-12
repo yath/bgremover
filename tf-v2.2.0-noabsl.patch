@@ -1,0 +1,20 @@
+diff --git a/tensorflow/lite/delegates/gpu/gl_delegate.h b/tensorflow/lite/delegates/gpu/gl_delegate.h
+index 8699e15d..29e9cf9b 100644
+--- a/tensorflow/lite/delegates/gpu/gl_delegate.h
++++ b/tensorflow/lite/delegates/gpu/gl_delegate.h
+@@ -20,7 +20,6 @@ limitations under the License.
+ 
+ #include <GLES3/gl31.h>
+ #undef Status
+-#include "absl/base/macros.h"
+ #include "tensorflow/lite/c/common.h"
+ 
+ #ifdef SWIG
+@@ -120,7 +119,6 @@ TFL_CAPI_EXPORT TfLiteGpuDelegateOptions TfLiteGpuDelegateOptionsDefault();
+ //   .preferred_gl_object_type = TFLITE_GL_OBJECT_TYPE_FASTEST,
+ //   .dynamic_batch_enabled = false,
+ // },
+-ABSL_DEPRECATED("Use TfLiteGpuDelegateV2Create defined in delegate.h instead.")
+ TFL_CAPI_EXPORT TfLiteDelegate* TfLiteGpuDelegateCreate(
+     const TfLiteGpuDelegateOptions* options);
+ 

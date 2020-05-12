@@ -8,10 +8,20 @@
 #include "glog/logging.h"
 
 #include "tensorflow/lite/c/c_api.h"
+#include "tensorflow/lite/delegates/gpu/delegate.h"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
+
+extern "C" {
+void eglCreateSyncKHR() { }
+void eglClientWaitSyncKHR() { }
+void eglWaitSyncKHR() { }
+void eglDestroySyncKHR() { }
+}
+
+#define WITH_GL 1
 
 DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "model filename");
 
@@ -49,6 +59,10 @@ private:
     const TfLiteTensor *output_;
     int width_, height_, nlabels_;
 
+#ifdef WITH_GL
+    TfLiteDelegate *gpu_delegate_;
+#endif
+
     std::string tensor_shape(const TfLiteTensor *t) {
         std::stringstream ret;
         ret << "[";
@@ -71,6 +85,10 @@ public:
         TfLiteInterpreterOptionsSetNumThreads(options_, num_threads);
         TfLiteInterpreterOptionsSetErrorReporter(options_,
                 (void(*)(void *, const char *, va_list))std::vfprintf, (void*)stderr);
+#ifdef WITH_GL
+        gpu_delegate_ = CHECK_NOTNULL(TfLiteGpuDelegateV2Create(nullptr));
+        TfLiteInterpreterOptionsAddDelegate(options_, gpu_delegate_);
+#endif
 
         interpreter_ = CHECK_NOTNULL(TfLiteInterpreterCreate(model_, options_));
         TfLiteInterpreterAllocateTensors(interpreter_);
@@ -175,6 +193,9 @@ public:
 
     ~BackgroundRemover() {
         TfLiteInterpreterDelete(interpreter_);
+#ifdef WITH_GL
+        TfLiteGpuDelegateV2Delete(gpu_delegate_);
+#endif
         TfLiteInterpreterOptionsDelete(options_);
         TfLiteModelDelete(model_);
     }

@@ -14,6 +14,15 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
 
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+
 extern "C" {
 void eglCreateSyncKHR() { }
 void eglClientWaitSyncKHR() { }
@@ -23,7 +32,14 @@ void eglDestroySyncKHR() { }
 
 #define WITH_GL 1
 
-DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "model filename");
+DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
+
+// This is an int, because cv::VideoCapture(int) gives a higher resolution than
+// cv::VideoCapture(const std::string&) (640x480, maybe b/c of an implicit gstreamer
+// pipeline?)
+DEFINE_int(input_device_number, 0, "Input device number (/dev/videoX)");
+
+DEFINE_string(output_device_path, "/dev/video2", "Output device");
 
 const char *label_names[] = {
     "background",
@@ -48,6 +64,7 @@ const char *label_names[] = {
     "train",
     "tv",
 };
+
 
 class BackgroundRemover {
 private:
@@ -117,20 +134,14 @@ public:
         LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model " << model_filename;
     }
 
-    void maskBackground(cv::Mat& frame) {
-        cv::Mat small, input_int;
+    void maskBackground(cv::Mat& frame /* rgb */) {
+        cv::Mat small;
         cv::resize(frame, small, cv::Size(width_, height_));
-        cv::cvtColor(small, input_int, cv::COLOR_BGR2RGB);
 
         cv::Mat input_float;
-        input_int.convertTo(input_float, CV_32FC3, 1./255, -.5);
-#if 0
-        LOG(INFO) << "input_float.size: " << input_float.size << ", type: " << input_float.type();
-        LOG(INFO) << "input_float[0]: " << input_float;
-        exit(0);
-#endif
+        small.convertTo(input_float, CV_32FC3, 1./255, -.5);
 
-        CHECK_EQ(input_float.elemSize(), sizeof(float)*3);
+        CHECK_EQ(input_float.elemSize(), sizeof(float)*3 /* channels */);
 
         TfLiteTensorCopyFromBuffer(input_, (const void*)input_float.ptr<float>(),
                 width_*height_*sizeof(float)*3);
@@ -144,6 +155,8 @@ public:
         CHECK_EQ(TfLiteTensorByteSize(output_), width_*height_*nlabels_*sizeof(float));
         float *output = (float*)TfLiteTensorData(output_);
 
+        cv::Mat mask(cv::Size(width_, height_), CV_8UC3, cv::Scalar(255, 255, 255));
+
         int label_count[nlabels_] = {0};
 
         for (int y = 0; y < height_; y++) {
@@ -155,43 +168,14 @@ public:
                 std::stable_sort(labels.begin(), labels.end(),
                         [&](size_t a, size_t b) { return col[a] > col[b]; });
 
-#if 0
-                LOG(INFO) << "label[0]: " << labels[0] << " (" << label_names[labels[0]] << ")";
-                std::stringstream s;
-                s << "labels for (" << x << "," << y << "):";
-                for (int l = 0; l < nlabels_; l++)
-                    s << " " << label_names[labels[l]];
-                LOG(INFO) << s.str();
-#endif
-
-                if (labels[0] != 15)
-                    small.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(255, 0, 0);
-                label_count[labels[0]]++;
+                if (labels[0] != 15) {
+                    mask.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(0, 0, 0);
+                }
             }
         }
-#if 0
-        LOG(INFO) << "Label count for frame:";
-        for (int i = 0; i < nlabels_; i++) {
-            if (label_count[i])
-                LOG(INFO) << label_names[i] << ": " << label_count[i];
-        }
-#endif
-        cv::imshow("foo", small);
 
-#ifdef DEBUG_LABELS
-        for (int x = 0; x < width_; x++) {
-            for (int y = 0; y < height_; y++) {
-                std::stringstream s;
-                s << "labels for (" << x << "," << y << "):";
-
-                float *labels = &output[x*y*nlabels_];
-                for (int l = 0; l < nlabels_; l++)
-                    s << " " << labels[l];
-
-                LOG(INFO) << s.str();
-            }
-        }
-#endif
+        cv::resize(mask, mask, cv::Size(frame.cols, frame.rows));
+        cv::bitwise_and(frame, mask, frame);
     }
 
     ~BackgroundRemover() {
@@ -205,6 +189,117 @@ public:
 
 };
 
+std::ostream& operator<<(std::ostream& os, const struct v4l2_capability& cap) {
+    std::ios_base::fmtflags f(os.flags());
+    os << "struct v4l2_capability { .driver = \"" << (const char *)cap.driver << "\", .card = \""
+        << (const char *)cap.card << "\", capabilities = " << std::hex << std::showbase
+        << cap.capabilities << ", .device_caps = " << cap.device_caps << "}";
+    os.flags(f);
+    return os;
+}
+
+std::string fourcc(int v) {
+    std::stringstream ss;
+    ss << "v4l2_fourcc(";
+    for (int i = 0; i < 32; i += 8) {
+        if (i > 0)
+            ss << ", ";
+        ss << "'" << (char)((v >> i)&0xff) << "'";
+    }
+    ss << ")";
+    return ss.str();
+}
+
+std::ostream& operator<<(std::ostream& os, const struct v4l2_format& fmt) {
+    if (fmt.type == V4L2_BUF_TYPE_VIDEO_CAPTURE || fmt.type == V4L2_BUF_TYPE_VIDEO_OUTPUT) {
+        std::ios_base::fmtflags f(os.flags());
+        os << "struct v4l2_format { .type = " << fmt.type << ", "
+            << ".fmt.pix = struct v4l2_pix_format { .width = " << fmt.fmt.pix.width
+            << ", .height = " << fmt.fmt.pix.height
+            << ", .pixelformat = " << fourcc(fmt.fmt.pix.pixelformat)
+            << ", .field = " << fmt.fmt.pix.field << ", .bytesperline = " << fmt.fmt.pix.bytesperline
+            << ", .sizeimage = " << fmt.fmt.pix.sizeimage << ", .colorspace = " << fmt.fmt.pix.colorspace
+            << ", .priv = " << fmt.fmt.pix.priv << ", .flags = " << std::hex << std::showbase
+            << fmt.fmt.pix.flags << "} }";
+        os.flags(f);
+    } else {
+        os << "struct v4l2_format { .type = " << fmt.type << ", ??? }";
+    }
+    return os;
+}
+
+class VideoWriter {
+    const int fd_, width_, height_, bpp_;
+
+    int bytesPerPixel(int format) const {
+        switch (format) {
+            case V4L2_PIX_FMT_YUYV:
+                return 2;
+            case V4L2_PIX_FMT_RGB24:
+            case V4L2_PIX_FMT_BGR24:
+                return 3;
+            case V4L2_PIX_FMT_RGB32:
+            case V4L2_PIX_FMT_BGR32:
+                return 4;
+            default:
+                CHECK(0) << "Unknown format " << format;
+                return -1;
+        }
+    }
+
+public:
+    VideoWriter(const char *device_name, int width, int height, int pixelformat=V4L2_PIX_FMT_BGR24)
+    : width_(width)
+    , height_(height)
+    , fd_(open(device_name, O_WRONLY))
+    , bpp_(bytesPerPixel(pixelformat))
+    {
+        PCHECK(fd_ >= 0) << "Can't open " << device_name;
+
+        struct v4l2_capability cap;
+        PCHECK(ioctl(fd_, VIDIOC_QUERYCAP, &cap) != -1);
+        LOG(INFO) << "Capabilities of " << device_name << ": " << cap;
+
+        struct v4l2_format fmt;
+        if (ioctl(fd_, VIDIOC_G_FMT, &fmt) == -1) {
+            LOG(WARNING) << "Can't query video format: " << strerror(errno);
+        } else {
+            LOG(INFO) << "Current video format: " << fmt;
+        }
+
+        memset(&fmt, 0, sizeof(fmt));
+        // https://www.kernel.org/doc/html/v4.14/media/uapi/v4l/vidioc-g-fmt.html#c.v4l2_format
+        fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+        fmt.fmt.pix.width = width;
+        fmt.fmt.pix.height = height;
+        // https://www.kernel.org/doc/html/v4.14/media/uapi/v4l/pixfmt.html
+        fmt.fmt.pix.pixelformat = pixelformat;
+        fmt.fmt.pix.field = V4L2_FIELD_NONE;
+        fmt.fmt.pix.bytesperline = 0;
+        fmt.fmt.pix.sizeimage = 0;
+        fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
+        PCHECK(ioctl(fd_, VIDIOC_S_FMT, &fmt) != 1) << "Can't set video format " << fmt;
+        LOG(INFO) << "Set video format: " << fmt;
+        CHECK_EQ(fmt.fmt.pix.bytesperline, bpp_*width);
+        CHECK_EQ(fmt.fmt.pix.sizeimage, bpp_*width*height);
+    }
+
+    void writeFrame(const cv::Mat& frame) {
+        CHECK(frame.isContinuous());
+        CHECK_EQ(frame.cols, width_);
+        CHECK_EQ(frame.rows, height_);
+        CHECK_EQ(frame.elemSize(), bpp_);
+        int total = width_*height_*bpp_;
+        int ret = write(fd_, frame.data, total);
+        PCHECK(ret > 0) << "Can't write " << total << " bytes to v4l loopback";
+
+        if (ret < total)
+            LOG(WARNING) << "write() truncated (wrote " << ret << ", want " << total << " bytes)";
+        else
+            LOG(INFO) << "Wrote a " << total << " bytes frame";
+    }
+};
+
 int main(int argc, char **argv) {
     FLAGS_v = 1;
     FLAGS_logtostderr = true;
@@ -213,16 +308,42 @@ int main(int argc, char **argv) {
 
     BackgroundRemover bgr(FLAGS_model_filename.c_str());
 
-    cv::VideoCapture cap(0);
+    auto frameFormat = V4L2_PIX_FMT_RGB24;
+    cv::VideoCapture cap(FLAGS_input_device_number);
+
     cv::Mat frame;
+    cap >> frame; // Capture a frame so VideoWriter knows WxH
+    VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, frameFormat);
+
+    bool doMask = true;
     while (1) {
         cap >> frame;
-        if (frame.empty())
+        if (frame.empty()) {
+            LOG(ERROR) << "Empty frame received";
             break;
-        bgr.maskBackground(frame);
-        if (cv::waitKey(5) == 'q')
-            break;
+        }
+
+        cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+        if (doMask)
+            bgr.maskBackground(frame);
+
+        wri.writeFrame(frame);
+
+        cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
+        cv::imshow("frame", frame);
+
+        auto key = cv::waitKey(1);
+        switch (key) {
+            case ' ':
+                doMask = !doMask;
+                LOG(INFO) << (doMask ? "enabled" : "disabled") << " mask";
+                break;
+
+            case 'q':
+                goto out;
+        }
     }
+out:
 
     return 0;
 }

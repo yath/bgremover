@@ -8,7 +8,9 @@
 #include "glog/logging.h"
 
 #include "tensorflow/lite/c/c_api.h"
+#ifdef WITH_GL
 #include "tensorflow/lite/delegates/gpu/delegate.h"
+#endif
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -22,15 +24,6 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
-
-extern "C" {
-void eglCreateSyncKHR() { }
-void eglClientWaitSyncKHR() { }
-void eglWaitSyncKHR() { }
-void eglDestroySyncKHR() { }
-}
-
-#define WITH_GL 1
 
 DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
 
@@ -99,6 +92,7 @@ public:
         model_ = CHECK_NOTNULL(TfLiteModelCreateFromFile(model_filename));
 
         options_ = CHECK_NOTNULL(TfLiteInterpreterOptionsCreate());
+
         TfLiteInterpreterOptionsSetNumThreads(options_, num_threads);
         TfLiteInterpreterOptionsSetErrorReporter(options_,
                 (void(*)(void *, const char *, va_list))std::vfprintf, (void*)stderr);
@@ -116,7 +110,7 @@ public:
         input_ = CHECK_NOTNULL(TfLiteInterpreterGetInputTensor(interpreter_, 0));
         LOG(INFO) << "Input tensor: " << tensor_shape(input_);
         CHECK_EQ(TfLiteTensorType(input_), kTfLiteFloat32) << "input tensor must be float32";
-        CHECK_EQ(TfLiteTensorNumDims(input_), 4) << "input tensor must be [1, width, height, 3]";
+        CHECK_EQ(TfLiteTensorNumDims(input_), 4) << "input tensor must have 4 dimensions";
         CHECK_EQ(TfLiteTensorDim(input_, 0), 1) << "input tensor batch size must be 1";
         width_ = TfLiteTensorDim(input_, 1);
         height_ = TfLiteTensorDim(input_, 2);
@@ -125,11 +119,11 @@ public:
         output_ = CHECK_NOTNULL(TfLiteInterpreterGetOutputTensor(interpreter_, 0));
         LOG(INFO) << "Output tensor: " << tensor_shape(output_);
         CHECK_EQ(TfLiteTensorType(output_), kTfLiteFloat32) << "output tensor must be float32";
-        CHECK_EQ(TfLiteTensorNumDims(output_), 4) << "output tensor must be [1, width, height, labels]";
+        CHECK_EQ(TfLiteTensorNumDims(output_), 4) << "output tensor must have 4 dimensions";
         CHECK_EQ(TfLiteTensorDim(output_, 1), width_) << "output tensor width doesn't match input tensor width";
         CHECK_EQ(TfLiteTensorDim(output_, 2), height_) << "output tensor height doesn't match input tensor height";
         nlabels_ = TfLiteTensorDim(output_, 3);
-        CHECK_EQ(nlabels_, sizeof(label_names)/sizeof(label_names[0]));
+        DCHECK_EQ(nlabels_, sizeof(label_names)/sizeof(label_names[0]));
 
         LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model " << model_filename;
     }
@@ -312,7 +306,7 @@ int main(int argc, char **argv) {
     cv::VideoCapture cap(FLAGS_input_device_number);
 
     cv::Mat frame;
-    cap >> frame; // Capture a frame so VideoWriter knows WxH
+    cap >> frame; // Capture a frame to determine output WxH
     VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, frameFormat);
 
     bool doMask = true;

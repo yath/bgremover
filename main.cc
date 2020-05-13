@@ -37,7 +37,7 @@ DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
 // This is an int, because cv::VideoCapture(int) gives a higher resolution than
 // cv::VideoCapture(const std::string&) (640x480, maybe b/c of an implicit gstreamer
 // pipeline?)
-DEFINE_int(input_device_number, 0, "Input device number (/dev/videoX)");
+DEFINE_int32(input_device_number, 0, "Input device number (/dev/videoX)");
 
 DEFINE_string(output_device_path, "/dev/video2", "Output device");
 

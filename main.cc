@@ -33,6 +33,7 @@ DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
 DEFINE_int32(input_device_number, 0, "Input device number (/dev/videoX)");
 
 DEFINE_string(output_device_path, "/dev/video2", "Output device");
+DEFINE_string(image_filename, "bliss.jpg", "Image filename");
 
 const char *label_names[] = {
     "background",
@@ -128,7 +129,7 @@ public:
         LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model " << model_filename;
     }
 
-    void maskBackground(cv::Mat& frame /* rgb */) {
+    void maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& maskImage) {
         cv::Mat small;
         cv::resize(frame, small, cv::Size(width_, height_));
 
@@ -149,7 +150,7 @@ public:
         CHECK_EQ(TfLiteTensorByteSize(output_), width_*height_*nlabels_*sizeof(float));
         float *output = (float*)TfLiteTensorData(output_);
 
-        cv::Mat mask(cv::Size(width_, height_), CV_8UC3, cv::Scalar(255, 255, 255));
+        cv::Mat mask = cv::Mat::zeros(cv::Size(width_, height_), CV_8U);
 
         int label_count[nlabels_] = {0};
 
@@ -163,13 +164,20 @@ public:
                         [&](size_t a, size_t b) { return col[a] > col[b]; });
 
                 if (labels[0] != 15) {
-                    mask.at<cv::Vec3b>(cv::Point(x, y)) = cv::Vec3b(0, 0, 0);
+                    mask.at<unsigned char>(cv::Point(x, y)) = 1;
                 }
             }
         }
 
         cv::resize(mask, mask, cv::Size(frame.cols, frame.rows));
-        cv::bitwise_and(frame, mask, frame);
+        LOG(INFO) << "frame type: " << frame.type() << ", size: " << frame.size;
+        LOG(INFO) << "maskImage type: " << maskImage.type() << ", size: " << maskImage.size;
+        for (int x = 0; x < frame.cols; x++)
+            for (int y = 0; y < frame.rows; y++)
+                if (mask.at<unsigned char>(cv::Point(x, y)))
+                    frame.at<cv::Vec3b>(cv::Point(x, y)) = maskImage.at<cv::Vec3b>(cv::Point(x, y));
+        //frame.setTo(maskImage, mask);
+        //cv::bitwise_and(frame, mask, frame);
     }
 
     ~BackgroundRemover() {
@@ -309,6 +317,16 @@ int main(int argc, char **argv) {
     cap >> frame; // Capture a frame to determine output WxH
     VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, frameFormat);
 
+    cv::Mat maskImage;
+    if (FLAGS_image_filename.size()) {
+        maskImage = cv::imread(FLAGS_image_filename);
+        cv::resize(maskImage, maskImage, cv::Size(frame.cols, frame.rows));
+        cv::cvtColor(maskImage, maskImage, cv::COLOR_BGR2RGB);
+        LOG(INFO) << "mask image: " << maskImage;
+    } else {
+        maskImage = cv::Mat(cv::Size(frame.cols, frame.rows), CV_8UC3, cv::Scalar(255, 255, 255));
+    }
+
     bool doMask = true;
     while (1) {
         cap >> frame;
@@ -319,7 +337,7 @@ int main(int argc, char **argv) {
 
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
         if (doMask)
-            bgr.maskBackground(frame);
+            bgr.maskBackground(frame, maskImage);
 
         wri.writeFrame(frame);
 

@@ -90,7 +90,7 @@ private:
 
 public:
     BackgroundRemover(const char *model_filename, int num_threads=4) {
-        static_assert(sizeof(float) == 4);
+        static_assert(sizeof(float) == 4, "floats must be 32 bits");
 
         model_ = CHECK_NOTNULL(TfLiteModelCreateFromFile(model_filename));
 

@@ -11,7 +11,7 @@ builddir:
 	(cd build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..)
 
 tidy: builddir
-	clang-tidy -p build $(wildcard *.cc)
+	clang-tidy -p build $(wildcard src/*.cc)
 
 clean:
 	rm -rf build

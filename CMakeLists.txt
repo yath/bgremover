@@ -55,7 +55,15 @@ add_subdirectory(gflags EXCLUDE_FROM_ALL)
 
 
 ## Default target
-add_executable(bgr main.cc)
+add_executable(bgr
+    src/main.cc
+
+    src/background_remover.cc
+    src/background_remover.h
+
+    src/video_writer.cc
+    src/video_writer.h
+)
 
 add_dependencies(bgr TFLite)
 target_include_directories(bgr PRIVATE ${TFLite_INCLUDES})

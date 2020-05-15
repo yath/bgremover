@@ -62,6 +62,8 @@ const char *label_names[] = {
 
 class BackgroundRemover {
 private:
+    constexpr static int interpolation_method = cv::INTER_LINEAR;
+
     TfLiteModel *model_;
     TfLiteInterpreterOptions *options_;
     TfLiteInterpreter *interpreter_;
@@ -132,7 +134,7 @@ public:
     void maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& maskImage /* rgb */) {
         CHECK_EQ(frame.size, maskImage.size);
         cv::Mat small;
-        cv::resize(frame, small, cv::Size(width_, height_));
+        cv::resize(frame, small, cv::Size(width_, height_), interpolation_method);
 
         cv::Mat input_float;
         small.convertTo(input_float, CV_32FC3, 1./255, -.5);
@@ -169,7 +171,7 @@ public:
             }
         }
 
-        cv::resize(mask, mask, cv::Size(frame.cols, frame.rows));
+        cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
         // XXX: Fix this.
         for (int x = 0; x < frame.cols; x++)
             for (int y = 0; y < frame.rows; y++)

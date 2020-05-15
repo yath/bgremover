@@ -1,7 +1,10 @@
 .PHONY: all builddir tidy clean
 
-all: builddir
+all: builddir deeplabv3_257_mv_gpu.tflite
 	$(MAKE) -C build
+
+deeplabv3_257_mv_gpu.tflite:
+	curl https://storage.googleapis.com/download.tensorflow.org/models/tflite/gpu/deeplabv3_257_mv_gpu.tflite > $@
 
 builddir:
 	mkdir -p build

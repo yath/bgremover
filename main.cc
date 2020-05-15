@@ -129,7 +129,8 @@ public:
         LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model " << model_filename;
     }
 
-    void maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& maskImage) {
+    void maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& maskImage /* rgb */) {
+        CHECK_EQ(frame.size, maskImage.size);
         cv::Mat small;
         cv::resize(frame, small, cv::Size(width_, height_));
 
@@ -144,20 +145,19 @@ public:
         auto start = std::chrono::steady_clock::now();
         TfLiteInterpreterInvoke(interpreter_);
         auto end = std::chrono::steady_clock::now();
-        std::chrono::duration<double> diff = end-start;
-        LOG(INFO) << "Inference time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count() << "ms";
+        auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
+        LOG(INFO) << "Inference time: " << diffMs << "ms";
 
         CHECK_EQ(TfLiteTensorByteSize(output_), width_*height_*nlabels_*sizeof(float));
         float *output = (float*)TfLiteTensorData(output_);
 
         cv::Mat mask = cv::Mat::zeros(cv::Size(width_, height_), CV_8U);
 
-        int label_count[nlabels_] = {0};
-
         for (int y = 0; y < height_; y++) {
             float *row = &output[y * width_ * nlabels_];
             for (int x = 0; x < width_; x++) {
                 float *col = &row[x * nlabels_];
+                // XXX: Only need the max element index.
                 std::vector<size_t> labels(nlabels_);
                 std::iota(labels.begin(), labels.end(), 0);
                 std::stable_sort(labels.begin(), labels.end(),
@@ -170,8 +170,7 @@ public:
         }
 
         cv::resize(mask, mask, cv::Size(frame.cols, frame.rows));
-        LOG(INFO) << "frame type: " << frame.type() << ", size: " << frame.size;
-        LOG(INFO) << "maskImage type: " << maskImage.type() << ", size: " << maskImage.size;
+        // XXX: Fix this.
         for (int x = 0; x < frame.cols; x++)
             for (int y = 0; y < frame.rows; y++)
                 if (mask.at<unsigned char>(cv::Point(x, y)))
@@ -317,14 +316,17 @@ int main(int argc, char **argv) {
     cap >> frame; // Capture a frame to determine output WxH
     VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, frameFormat);
 
-    cv::Mat maskImage;
+    cv::Mat mask = cv::Mat(cv::Size(frame.cols, frame.rows), CV_8UC3, cv::Scalar(255, 255, 255));
     if (FLAGS_image_filename.size()) {
-        maskImage = cv::imread(FLAGS_image_filename);
-        cv::resize(maskImage, maskImage, cv::Size(frame.cols, frame.rows));
-        cv::cvtColor(maskImage, maskImage, cv::COLOR_BGR2RGB);
-        LOG(INFO) << "mask image: " << maskImage;
-    } else {
-        maskImage = cv::Mat(cv::Size(frame.cols, frame.rows), CV_8UC3, cv::Scalar(255, 255, 255));
+        cv::Mat img = cv::imread(FLAGS_image_filename);
+        if (!img.empty()) {
+            cv::resize(img, img, cv::Size(frame.cols, frame.rows));
+            cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
+            mask = img;
+            LOG(INFO) << "Using mask image " << FLAGS_image_filename;
+        } else {
+            LOG(WARNING) << "Can't load mask from image " << FLAGS_image_filename;
+        }
     }
 
     bool doMask = true;
@@ -337,7 +339,7 @@ int main(int argc, char **argv) {
 
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
         if (doMask)
-            bgr.maskBackground(frame, maskImage);
+            bgr.maskBackground(frame, mask);
 
         wri.writeFrame(frame);
 

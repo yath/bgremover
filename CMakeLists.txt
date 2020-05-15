@@ -77,6 +77,7 @@ target_link_libraries(bgr
     ${TFLite_LIBS}
     ${OpenCV_LIBS}
     glog::glog
+    tbb
 )
 
 if(WITH_GL)

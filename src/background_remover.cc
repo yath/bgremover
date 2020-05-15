@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <execution>
 #include <numeric>
 #include <vector>
 
@@ -17,6 +18,9 @@ const char *label_names[] = {
     "car",        "cat",       "chair",       "cow",   "diningtable", "dog",    "horse",
     "motorbike",  "person",    "pottedplant", "sheep", "sofa",        "train",  "tv",
 };
+
+constexpr int label_count = sizeof(label_names)/sizeof(label_names[0]);
+typedef float Labels[label_count];
 
 static std::string tensor_shape(const TfLiteTensor *t) {
     std::stringstream ret;
@@ -67,8 +71,7 @@ BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads
         << "output tensor width doesn't match input tensor width";
     CHECK_EQ(TfLiteTensorDim(output_, 2), height_)
         << "output tensor height doesn't match input tensor height";
-    nlabels_ = TfLiteTensorDim(output_, 3);
-    DCHECK_EQ(nlabels_, sizeof(label_names) / sizeof(label_names[0]));
+    DCHECK_EQ(TfLiteTensorDim(output_, 3), label_count);
 
     LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model "
               << model_filename;
@@ -94,26 +97,19 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     LOG(INFO) << "Inference time: " << diffMs << "ms";
 
-    CHECK_EQ(TfLiteTensorByteSize(output_), width_ * height_ * nlabels_ * sizeof(float));
-    float *output = (float *)TfLiteTensorData(output_);
+    CHECK_EQ(TfLiteTensorByteSize(output_), width_ * height_ * sizeof(Labels));
+    Labels *output = (Labels *)TfLiteTensorData(output_);
 
     cv::Mat mask = cv::Mat::zeros(cv::Size(width_, height_), CV_8U);
 
-    for (int y = 0; y < height_; y++) {
-        float *row = &output[y * width_ * nlabels_];
-        for (int x = 0; x < width_; x++) {
-            float *col = &row[x * nlabels_];
-            // XXX: Only need the max element index.
-            std::vector<size_t> labels(nlabels_);
-            std::iota(labels.begin(), labels.end(), 0);
-            std::stable_sort(labels.begin(), labels.end(),
-                             [&](size_t a, size_t b) { return col[a] > col[b]; });
-
-            if (labels[0] != 15) {
-                mask.at<unsigned char>(cv::Point(x, y)) = 1;
-            }
+    std::for_each(std::execution::par_unseq, output, output+width_*height_, [&](Labels l) {
+        float *max = std::max_element(l, l+label_count);
+        int label = max-l;
+        if (label != 15) {
+            int pixel = (Labels*)l - output;
+            mask.at<unsigned char>(cv::Point(pixel % width_, pixel / width_)) = 1;
         }
-    }
+    });
 
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
     // XXX: Fix this.

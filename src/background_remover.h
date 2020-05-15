@@ -15,7 +15,7 @@ class BackgroundRemover {
 
     TfLiteTensor *input_;
     const TfLiteTensor *output_;
-    int width_, height_, nlabels_;
+    int width_, height_;
 
 #ifdef WITH_GL
     TfLiteDelegate *gpu_delegate_;

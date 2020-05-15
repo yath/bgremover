@@ -3,6 +3,7 @@
 #include <opencv2/videoio.hpp>
 
 #include "background_remover.h"
+#include "background_selector.h"
 #include "gflags/gflags.h"
 #include "glog/logging.h"
 #include "video_writer.h"
@@ -11,11 +12,14 @@ DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
 
 // This is an int, because cv::VideoCapture(int) gives a higher resolution than
 // cv::VideoCapture(const std::string&) (640x480, maybe b/c of an implicit
-// gstreamer pipeline?)
+// gstreamer pipeline?). XXX: Fix this.
 DEFINE_int32(input_device_number, 0, "Input device number (/dev/videoX)");
 
 DEFINE_string(output_device_path, "/dev/video2", "Output device");
-DEFINE_string(image_filename, "bliss.jpg", "Image filename");
+
+DEFINE_string(image_dir, "./backgrounds/", "Directory to background images");
+DEFINE_string(color_list, "ff0000,00ff00,0000ff",
+              "Comma-separated list of background RRGGBB hex values");
 
 int main(int argc, char **argv) {
     FLAGS_v = 1;
@@ -24,26 +28,15 @@ int main(int argc, char **argv) {
     google::InitGoogleLogging(argv[0]);
 
     BackgroundRemover bgr(FLAGS_model_filename.c_str());
-
-    auto frameFormat = V4L2_PIX_FMT_RGB24;
     cv::VideoCapture cap(FLAGS_input_device_number);
 
     cv::Mat frame;
     cap >> frame;  // Capture a frame to determine output WxH
-    VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, frameFormat);
+    CHECK(!frame.empty()) << "Empty frame captured from video input " << FLAGS_input_device_number;
 
-    cv::Mat mask = cv::Mat(cv::Size(frame.cols, frame.rows), CV_8UC3, cv::Scalar(255, 255, 255));
-    if (FLAGS_image_filename.size()) {
-        cv::Mat img = cv::imread(FLAGS_image_filename);
-        if (!img.empty()) {
-            cv::resize(img, img, cv::Size(frame.cols, frame.rows));
-            cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
-            mask = img;
-            LOG(INFO) << "Using mask image " << FLAGS_image_filename;
-        } else {
-            LOG(WARNING) << "Can't load mask from image " << FLAGS_image_filename;
-        }
-    }
+    BackgroundSelector bgs(FLAGS_image_dir, FLAGS_color_list, frame.cols, frame.rows);
+
+    VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, V4L2_PIX_FMT_RGB24);
 
     bool doMask = true;
     while (1) {
@@ -54,7 +47,7 @@ int main(int argc, char **argv) {
         }
 
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        if (doMask) bgr.maskBackground(frame, mask);
+        if (doMask) bgr.maskBackground(frame, bgs.getBackground());
 
         wri.writeFrame(frame);
 
@@ -66,6 +59,22 @@ int main(int argc, char **argv) {
             case ' ':
                 doMask = !doMask;
                 LOG(INFO) << (doMask ? "enabled" : "disabled") << " mask";
+                break;
+
+            case 'C':
+                bgs.selectPrevColor();
+                break;
+
+            case 'c':
+                bgs.selectNextColor();
+                break;
+
+            case 'I':
+                bgs.selectPrevImage();
+                break;
+
+            case 'i':
+                bgs.selectNextImage();
                 break;
 
             case 'q':

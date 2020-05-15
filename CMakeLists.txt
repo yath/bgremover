@@ -61,9 +61,14 @@ add_executable(bgr
     src/background_remover.cc
     src/background_remover.h
 
+    src/background_selector.cc
+    src/background_selector.h
+
     src/video_writer.cc
     src/video_writer.h
 )
+set_property(TARGET bgr PROPERTY CXX_STANDARD 17)
+set_property(TARGET bgr PROPERTY CXX_STANDARD_REQUIRED ON)
 
 add_dependencies(bgr TFLite)
 target_include_directories(bgr PRIVATE ${TFLite_INCLUDES})

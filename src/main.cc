@@ -1,18 +1,17 @@
-#include "background_remover.h"
-#include "video_writer.h"
-
-#include "gflags/gflags.h"
-#include "glog/logging.h"
-
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
-#include <opencv2/highgui.hpp>
+
+#include "background_remover.h"
+#include "gflags/gflags.h"
+#include "glog/logging.h"
+#include "video_writer.h"
 
 DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
 
 // This is an int, because cv::VideoCapture(int) gives a higher resolution than
-// cv::VideoCapture(const std::string&) (640x480, maybe b/c of an implicit gstreamer
-// pipeline?)
+// cv::VideoCapture(const std::string&) (640x480, maybe b/c of an implicit
+// gstreamer pipeline?)
 DEFINE_int32(input_device_number, 0, "Input device number (/dev/videoX)");
 
 DEFINE_string(output_device_path, "/dev/video2", "Output device");
@@ -30,7 +29,7 @@ int main(int argc, char **argv) {
     cv::VideoCapture cap(FLAGS_input_device_number);
 
     cv::Mat frame;
-    cap >> frame; // Capture a frame to determine output WxH
+    cap >> frame;  // Capture a frame to determine output WxH
     VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, frameFormat);
 
     cv::Mat mask = cv::Mat(cv::Size(frame.cols, frame.rows), CV_8UC3, cv::Scalar(255, 255, 255));
@@ -55,8 +54,7 @@ int main(int argc, char **argv) {
         }
 
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        if (doMask)
-            bgr.maskBackground(frame, mask);
+        if (doMask) bgr.maskBackground(frame, mask);
 
         wri.writeFrame(frame);
 

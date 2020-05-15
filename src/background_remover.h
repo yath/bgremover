@@ -1,12 +1,12 @@
 #ifndef BACKGROUND_REMOVER_H
 #define BACKGROUND_REMOVER_H
 
-#include "tensorflow/lite/c/c_api.h"
-
 #include <opencv2/imgproc.hpp>
 
+#include "tensorflow/lite/c/c_api.h"
+
 class BackgroundRemover {
-private:
+   private:
     constexpr static int interpolation_method = cv::INTER_LINEAR;
 
     TfLiteModel *model_;
@@ -21,10 +21,10 @@ private:
     TfLiteDelegate *gpu_delegate_;
 #endif
 
-public:
-    BackgroundRemover(const char *model_filename, int num_threads=4);
+   public:
+    BackgroundRemover(const char *model_filename, int num_threads = 4);
     ~BackgroundRemover();
 
-    void maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& maskImage /* rgb */);
+    void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */);
 };
-#endif // BACKGROUND_REMOVER_H
+#endif  // BACKGROUND_REMOVER_H

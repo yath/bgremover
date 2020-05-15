@@ -6,42 +6,23 @@
 #include "tensorflow/lite/delegates/gpu/delegate.h"
 #endif
 
-#include <cstdio>
-#include <vector>
-#include <numeric>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <numeric>
+#include <vector>
 
 const char *label_names[] = {
-    "background",
-    "aeroplane",
-    "bicycle",
-    "bird",
-    "board",
-    "bottle",
-    "bus",
-    "car",
-    "cat",
-    "chair",
-    "cow",
-    "diningtable",
-    "dog",
-    "horse",
-    "motorbike",
-    "person",
-    "pottedplant",
-    "sheep",
-    "sofa",
-    "train",
-    "tv",
+    "background", "aeroplane", "bicycle",     "bird",  "board",       "bottle", "bus",
+    "car",        "cat",       "chair",       "cow",   "diningtable", "dog",    "horse",
+    "motorbike",  "person",    "pottedplant", "sheep", "sofa",        "train",  "tv",
 };
 
 static std::string tensor_shape(const TfLiteTensor *t) {
     std::stringstream ret;
     ret << "[";
     for (int i = 0; i < TfLiteTensorNumDims(t); i++) {
-        if (i > 0)
-            ret << ", ";
+        if (i > 0) ret << ", ";
         ret << TfLiteTensorDim(t, i);
     }
     ret << "]";
@@ -56,8 +37,8 @@ BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads
     options_ = CHECK_NOTNULL(TfLiteInterpreterOptionsCreate());
 
     TfLiteInterpreterOptionsSetNumThreads(options_, num_threads);
-    TfLiteInterpreterOptionsSetErrorReporter(options_,
-            (void(*)(void *, const char *, va_list))std::vfprintf, (void*)stderr);
+    TfLiteInterpreterOptionsSetErrorReporter(
+        options_, (void (*)(void *, const char *, va_list))std::vfprintf, (void *)stderr);
 #ifdef WITH_GL
     auto delegate_opts = TfLiteGpuDelegateOptionsV2Default();
     delegate_opts.inference_preference = TFLITE_GPU_INFERENCE_PREFERENCE_SUSTAINED_SPEED;
@@ -82,35 +63,39 @@ BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads
     LOG(INFO) << "Output tensor: " << tensor_shape(output_);
     CHECK_EQ(TfLiteTensorType(output_), kTfLiteFloat32) << "output tensor must be float32";
     CHECK_EQ(TfLiteTensorNumDims(output_), 4) << "output tensor must have 4 dimensions";
-    CHECK_EQ(TfLiteTensorDim(output_, 1), width_) << "output tensor width doesn't match input tensor width";
-    CHECK_EQ(TfLiteTensorDim(output_, 2), height_) << "output tensor height doesn't match input tensor height";
+    CHECK_EQ(TfLiteTensorDim(output_, 1), width_)
+        << "output tensor width doesn't match input tensor width";
+    CHECK_EQ(TfLiteTensorDim(output_, 2), height_)
+        << "output tensor height doesn't match input tensor height";
     nlabels_ = TfLiteTensorDim(output_, 3);
-    DCHECK_EQ(nlabels_, sizeof(label_names)/sizeof(label_names[0]));
+    DCHECK_EQ(nlabels_, sizeof(label_names) / sizeof(label_names[0]));
 
-    LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model " << model_filename;
+    LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model "
+              << model_filename;
 }
 
-void BackgroundRemover::maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& maskImage /* rgb */) {
+void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
+                                       const cv::Mat &maskImage /* rgb */) {
     CHECK_EQ(frame.size, maskImage.size);
     cv::Mat small;
     cv::resize(frame, small, cv::Size(width_, height_), interpolation_method);
 
     cv::Mat input_float;
-    small.convertTo(input_float, CV_32FC3, 1./255, -.5);
+    small.convertTo(input_float, CV_32FC3, 1. / 255, -.5);
 
-    CHECK_EQ(input_float.elemSize(), sizeof(float)*3 /* channels */);
+    CHECK_EQ(input_float.elemSize(), sizeof(float) * 3 /* channels */);
 
-    TfLiteTensorCopyFromBuffer(input_, (const void*)input_float.ptr<float>(),
-            width_*height_*sizeof(float)*3);
+    TfLiteTensorCopyFromBuffer(input_, (const void *)input_float.ptr<float>(),
+                               width_ * height_ * sizeof(float) * 3);
 
     auto start = std::chrono::steady_clock::now();
     TfLiteInterpreterInvoke(interpreter_);
     auto end = std::chrono::steady_clock::now();
-    auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
+    auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     LOG(INFO) << "Inference time: " << diffMs << "ms";
 
-    CHECK_EQ(TfLiteTensorByteSize(output_), width_*height_*nlabels_*sizeof(float));
-    float *output = (float*)TfLiteTensorData(output_);
+    CHECK_EQ(TfLiteTensorByteSize(output_), width_ * height_ * nlabels_ * sizeof(float));
+    float *output = (float *)TfLiteTensorData(output_);
 
     cv::Mat mask = cv::Mat::zeros(cv::Size(width_, height_), CV_8U);
 
@@ -122,7 +107,7 @@ void BackgroundRemover::maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& 
             std::vector<size_t> labels(nlabels_);
             std::iota(labels.begin(), labels.end(), 0);
             std::stable_sort(labels.begin(), labels.end(),
-                    [&](size_t a, size_t b) { return col[a] > col[b]; });
+                             [&](size_t a, size_t b) { return col[a] > col[b]; });
 
             if (labels[0] != 15) {
                 mask.at<unsigned char>(cv::Point(x, y)) = 1;
@@ -136,8 +121,8 @@ void BackgroundRemover::maskBackground(cv::Mat& frame /* rgb */, const cv::Mat& 
         for (int y = 0; y < frame.rows; y++)
             if (mask.at<unsigned char>(cv::Point(x, y)))
                 frame.at<cv::Vec3b>(cv::Point(x, y)) = maskImage.at<cv::Vec3b>(cv::Point(x, y));
-    //frame.setTo(maskImage, mask);
-    //cv::bitwise_and(frame, mask, frame);
+    // frame.setTo(maskImage, mask);
+    // cv::bitwise_and(frame, mask, frame);
 }
 
 BackgroundRemover::~BackgroundRemover() {

@@ -9,6 +9,7 @@
 #include "video_writer.h"
 
 DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
+DEFINE_string(model_type, "deeplabv3", "Model type [deeplabv3|bodypix_resnet|bodypix_mobilenet]");
 
 // This is an int, because cv::VideoCapture(int) gives a higher resolution than
 // cv::VideoCapture(const std::string&) (640x480, maybe b/c of an implicit
@@ -27,7 +28,7 @@ int main(int argc, char **argv) {
     google::ParseCommandLineFlags(&argc, &argv, false);
     google::InitGoogleLogging(argv[0]);
 
-    BackgroundRemover bgr(FLAGS_model_filename.c_str());
+    BackgroundRemover bgr(FLAGS_model_filename, FLAGS_model_type);
     cv::VideoCapture cap(FLAGS_input_device_number);
 
     cv::Mat frame;

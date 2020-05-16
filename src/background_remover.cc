@@ -13,14 +13,15 @@
 #include <numeric>
 #include <vector>
 
-const char *label_names[] = {
+const char *deeplabv3_label_names[] = {
     "background", "aeroplane", "bicycle",     "bird",  "board",       "bottle", "bus",
     "car",        "cat",       "chair",       "cow",   "diningtable", "dog",    "horse",
     "motorbike",  "person",    "pottedplant", "sheep", "sofa",        "train",  "tv",
 };
 
-constexpr int label_count = sizeof(label_names) / sizeof(label_names[0]);
-typedef float Labels[label_count];
+constexpr int deeplabv3_label_count =
+    sizeof(deeplabv3_label_names) / sizeof(deeplabv3_label_names[0]);
+typedef float DeeplabV3Labels[deeplabv3_label_count];
 
 static std::string tensor_shape(const TfLiteTensor *t) {
     std::stringstream ret;
@@ -33,10 +34,26 @@ static std::string tensor_shape(const TfLiteTensor *t) {
     return ret.str();
 }
 
-BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads) {
+BackgroundRemover::ModelType BackgroundRemover::parseModelType(const std::string &model_type) {
+    if (model_type == "deeplabv3")
+        return BackgroundRemover::ModelType::DeeplabV3;
+    else if (model_type == "bodypix_resnet")
+        return BackgroundRemover::ModelType::BodypixResnet;
+    else if (model_type == "bodypix_mobilenet")
+        return BackgroundRemover::ModelType::BodypixMobilenet;
+    else
+        return BackgroundRemover::ModelType::Undefined;
+}
+
+BackgroundRemover::BackgroundRemover(const std::string &model_filename,
+                                     const std::string &model_type, int num_threads)
+    : model_type_(parseModelType(model_type)) {
     static_assert(sizeof(float) == 4, "floats must be 32 bits");
 
-    model_ = CHECK_NOTNULL(TfLiteModelCreateFromFile(model_filename));
+    CHECK(model_type_ != ModelType::Undefined)
+        << "Invalid model type " << static_cast<int>(model_type_);
+
+    model_ = CHECK_NOTNULL(TfLiteModelCreateFromFile(model_filename.c_str()));
 
     options_ = CHECK_NOTNULL(TfLiteInterpreterOptionsCreate());
 
@@ -46,7 +63,7 @@ BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads
         [](void *unused, const char *fmt, va_list args) {
             std::vector<char> buf(vsnprintf(nullptr, 0, fmt, args) + 1);
             std::vsnprintf(buf.data(), buf.size(), fmt, args);
-            LOG(ERROR) << buf.data();
+            LOG(ERROR) << "Tensorflow: " << buf.data();
         },
         nullptr);
 #ifdef WITH_GL
@@ -73,14 +90,102 @@ BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads
     LOG(INFO) << "Output tensor: " << tensor_shape(output_);
     CHECK_EQ(TfLiteTensorType(output_), kTfLiteFloat32) << "output tensor must be float32";
     CHECK_EQ(TfLiteTensorNumDims(output_), 4) << "output tensor must have 4 dimensions";
-    CHECK_EQ(TfLiteTensorDim(output_, 1), width_)
-        << "output tensor width doesn't match input tensor width";
-    CHECK_EQ(TfLiteTensorDim(output_, 2), height_)
-        << "output tensor height doesn't match input tensor height";
-    DCHECK_EQ(TfLiteTensorDim(output_, 3), label_count);
+    int outw = TfLiteTensorDim(output_, 1);
+    CHECK_EQ(width_ % outw, 0) << "output tensor width is not a multiple of input tensor width";
+    stride_ = width_ / outw;
+    int outh = TfLiteTensorDim(output_, 2);
+    CHECK_EQ(height_ % outh, 0) << "output tensor height is not a multiple of input tensor height";
+    CHECK_EQ(height_ / outh, stride_) << "vertical stride doesn't match horizontal stride";
 
-    LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input for model "
-              << model_filename;
+    if (model_type_ == ModelType::DeeplabV3) {
+        CHECK_EQ(stride_, 1);
+        CHECK_EQ(TfLiteTensorDim(output_, 3), deeplabv3_label_count);
+    } else if (model_type_ == ModelType::BodypixResnet) {
+        CHECK(stride_ == 16 || stride_ == 32);
+        CHECK_EQ(TfLiteTensorDim(output_, 3), 1);
+    } else if (model_type_ == ModelType::BodypixMobilenet) {
+        CHECK(stride_ == 8 || stride_ == 16);
+        CHECK_EQ(TfLiteTensorDim(output_, 3), 1);
+    }
+
+    LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_
+              << "px input and stride=" << stride_ << " for model " << model_filename;
+}
+
+static float minVec3f(const cv::Vec3f &v) { return std::min({v[0], v[1], v[2]}); }
+
+static float maxVec3f(const cv::Vec3f &v) { return std::max({v[0], v[1], v[2]}); }
+
+static void checkValuesInRange(const cv::Mat &mat, float min, float max) {
+#ifndef NDEBUG
+    const auto [matmin, matmax] = std::minmax_element(
+        std::execution::par_unseq, mat.begin<cv::Vec3f>(), mat.end<cv::Vec3f>(),
+        [](const cv::Vec3f &a, const cv::Vec3f &b) { return minVec3f(a) < minVec3f(b); });
+    CHECK_GE(minVec3f(*matmin), min);
+    CHECK_LE(maxVec3f(*matmax), max);
+#endif
+}
+
+cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
+    cv::Mat ret;
+    switch (model_type_) {
+        case ModelType::DeeplabV3:
+        case ModelType::BodypixMobilenet:
+            img.convertTo(ret, CV_32FC3, 1. / 255, -.5);
+            checkValuesInRange(ret, -.5, .5);
+            break;
+
+        case ModelType::BodypixResnet:
+            img.convertTo(ret, CV_32FC3);
+            // https://github.com/tensorflow/tfjs-models/blob/master/body-pix/src/resnet.ts#L22
+            std::for_each(std::execution::par_unseq, ret.begin<cv::Vec3f>(), ret.end<cv::Vec3f>(),
+                          [](cv::Vec3f &v) { v += cv::Vec3f(-123.15, -115.90, -103.06); });
+            checkValuesInRange(ret, -127., 255.);  // ?
+            break;
+
+        default:
+            CHECK(0);
+    }
+
+    return ret;
+}
+
+cv::Mat BackgroundRemover::getMaskFromOutput() {
+    constexpr int person_label = 15;  // XXX
+    constexpr float threshold = .5;   // XXX
+
+    int maskw = width_ / stride_;
+    int maskh = height_ / stride_;
+
+    cv::Mat ret = cv::Mat::zeros(cv::Size(maskw, maskh), CV_8U);
+
+    size_t size = TfLiteTensorByteSize(output_);
+    void *data = TfLiteTensorData(output_);
+
+    if (model_type_ == ModelType::DeeplabV3) {
+        CHECK_EQ(size, maskw * maskh * sizeof(DeeplabV3Labels));
+        DeeplabV3Labels *labels = (DeeplabV3Labels *)data;
+        std::for_each(std::execution::par_unseq, labels, labels + maskw * maskh,
+                      [&](DeeplabV3Labels l) {
+                          float *max = std::max_element(l, l + deeplabv3_label_count);
+                          int label = max - l;
+                          if (label != person_label) {
+                              int pixel = (DeeplabV3Labels *)l - labels;
+                              ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
+                          }
+                      });
+    } else {
+        CHECK_EQ(size, maskw * maskh * sizeof(float));
+        float *prob = (float *)data;
+        std::for_each(std::execution::par_unseq, prob, prob + maskw * maskh, [&](float &p) {
+            if (p < threshold) {
+                int pixel = &p - prob;
+                ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
+            }
+        });
+    }
+
+    return ret;
 }
 
 void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
@@ -89,9 +194,7 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     cv::Mat small;
     cv::resize(frame, small, cv::Size(width_, height_), interpolation_method);
 
-    cv::Mat input_float;
-    small.convertTo(input_float, CV_32FC3, 1. / 255, -.5);
-
+    cv::Mat input_float = makeInputTensor(small);
     CHECK_EQ(input_float.elemSize(), sizeof(float) * 3 /* channels */);
 
     TfLiteTensorCopyFromBuffer(input_, (const void *)input_float.ptr<float>(),
@@ -103,21 +206,9 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     LOG(INFO) << "Inference time: " << diffMs << "ms";
 
-    CHECK_EQ(TfLiteTensorByteSize(output_), width_ * height_ * sizeof(Labels));
-    Labels *output = (Labels *)TfLiteTensorData(output_);
-
-    cv::Mat mask = cv::Mat::zeros(cv::Size(width_, height_), CV_8U);
-
-    std::for_each(std::execution::par_unseq, output, output + width_ * height_, [&](Labels l) {
-        float *max = std::max_element(l, l + label_count);
-        int label = max - l;
-        if (label != 15) {
-            int pixel = (Labels *)l - output;
-            mask.at<unsigned char>(cv::Point(pixel % width_, pixel / width_)) = 1;
-        }
-    });
-
+    cv::Mat mask = getMaskFromOutput();
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
+
     // XXX: Fix this.
     for (int x = 0; x < frame.cols; x++)
         for (int y = 0; y < frame.rows; y++)

@@ -69,6 +69,7 @@ int main(int argc, char** argv) {
     auto timing_last_printed = Timing::now();
 
     bool do_mask = true;
+    bool do_blur_mask = true;
     while (1) {
         timing.nframes++;
         cap >> frame;
@@ -77,7 +78,7 @@ int main(int argc, char** argv) {
             break;
         }
 
-        if (do_mask) bgr.maskBackground(frame, bgs.getBackground(), timing);
+        if (do_mask) bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, timing);
 
         if (debug_flags & DebugFlagShowOutputFrame) {
             cv::imshow("frame", frame);
@@ -90,6 +91,11 @@ int main(int argc, char** argv) {
             case ' ':
                 do_mask = !do_mask;
                 LOG(INFO) << (do_mask ? "enabled" : "disabled") << " mask";
+                break;
+
+            case 's':
+                do_blur_mask = !do_blur_mask;
+                LOG(INFO) << (do_blur_mask ? "enabled" : "disabled") << " mask blurring";
                 break;
 
             case 'C':

@@ -50,8 +50,7 @@ BackgroundRemover::BackgroundRemover(const std::string &model_filename,
     : model_type_(parseModelType(model_type)) {
     static_assert(sizeof(float) == 4, "floats must be 32 bits");
 
-    CHECK(model_type_ != ModelType::Undefined)
-        << "Invalid model type " << static_cast<int>(model_type_);
+    CHECK(model_type_ != ModelType::Undefined) << "Invalid model type " << model_type;
 
     model_ = CHECK_NOTNULL(TfLiteModelCreateFromFile(model_filename.c_str()));
 

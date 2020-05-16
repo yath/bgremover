@@ -285,14 +285,7 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &
     cv::Mat mask = getMaskFromOutput();
     unpadMat(mask, pad);
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
-
-    // XXX: Fix this.
-    for (int x = 0; x < frame.cols; x++)
-        for (int y = 0; y < frame.rows; y++)
-            if (mask.at<unsigned char>(cv::Point(x, y)))
-                frame.at<cv::Vec3b>(cv::Point(x, y)) = maskImage.at<cv::Vec3b>(cv::Point(x, y));
-    // frame.setTo(maskImage, mask);
-    // cv::bitwise_and(frame, mask, frame);
+    maskImage.copyTo(frame, mask);
 
     auto end = Timing::now();
     t.mask += (end - startMask);

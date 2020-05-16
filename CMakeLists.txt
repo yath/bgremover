@@ -28,8 +28,7 @@ ExternalProject_Add(TFLite
     GIT_TAG v2.2.0
     GIT_SHALLOW true
     CONFIGURE_COMMAND ""
-    PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/tf-v2.2.0-nostatus.patch &&
-                  patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/tf-v2.2.0-noabsl.patch
+    PATCH_COMMAND patch -p1 < ${CMAKE_CURRENT_LIST_DIR}/tf-v2.2.0-nostatus.patch
     BUILD_COMMAND bazel --output_user_root=${CMAKE_CURRENT_BINARY_DIR}/bazel-temp build -c opt ${TF_BAZEL_TARGETS}
     BUILD_IN_SOURCE true
     INSTALL_COMMAND ""

@@ -19,7 +19,7 @@ const char *label_names[] = {
     "motorbike",  "person",    "pottedplant", "sheep", "sofa",        "train",  "tv",
 };
 
-constexpr int label_count = sizeof(label_names)/sizeof(label_names[0]);
+constexpr int label_count = sizeof(label_names) / sizeof(label_names[0]);
 typedef float Labels[label_count];
 
 static std::string tensor_shape(const TfLiteTensor *t) {
@@ -42,7 +42,13 @@ BackgroundRemover::BackgroundRemover(const char *model_filename, int num_threads
 
     TfLiteInterpreterOptionsSetNumThreads(options_, num_threads);
     TfLiteInterpreterOptionsSetErrorReporter(
-        options_, (void (*)(void *, const char *, va_list))std::vfprintf, (void *)stderr);
+        options_,
+        [](void *unused, const char *fmt, va_list args) {
+            std::vector<char> buf(vsnprintf(nullptr, 0, fmt, args) + 1);
+            std::vsnprintf(buf.data(), buf.size(), fmt, args);
+            LOG(ERROR) << buf.data();
+        },
+        nullptr);
 #ifdef WITH_GL
     auto delegate_opts = TfLiteGpuDelegateOptionsV2Default();
     delegate_opts.inference_preference = TFLITE_GPU_INFERENCE_PREFERENCE_SUSTAINED_SPEED;
@@ -102,11 +108,11 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
 
     cv::Mat mask = cv::Mat::zeros(cv::Size(width_, height_), CV_8U);
 
-    std::for_each(std::execution::par_unseq, output, output+width_*height_, [&](Labels l) {
-        float *max = std::max_element(l, l+label_count);
-        int label = max-l;
+    std::for_each(std::execution::par_unseq, output, output + width_ * height_, [&](Labels l) {
+        float *max = std::max_element(l, l + label_count);
+        int label = max - l;
         if (label != 15) {
-            int pixel = (Labels*)l - output;
+            int pixel = (Labels *)l - output;
             mask.at<unsigned char>(cv::Point(pixel % width_, pixel / width_)) = 1;
         }
     });

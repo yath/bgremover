@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <execution>
 #include <numeric>
@@ -149,9 +150,12 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
     return ret;
 }
 
+// constexpr float logit(float x) { return std::log(x / (1. - x)); }
+static inline float expit(float x) { return 1. / (1. + std::exp(-x)); }
+
 cv::Mat BackgroundRemover::getMaskFromOutput() {
     constexpr int person_label = 15;  // XXX
-    constexpr float threshold = .5;   // XXX
+    constexpr float threshold = .7;   // XXX
 
     int maskw = width_ / stride_;
     int maskh = height_ / stride_;
@@ -177,7 +181,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
         CHECK_EQ(size, maskw * maskh * sizeof(float));
         float *prob = (float *)data;
         std::for_each(std::execution::par_unseq, prob, prob + maskw * maskh, [&](float &p) {
-            if (p < threshold) {
+            if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
                 int pixel = &p - prob;
                 ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
             }

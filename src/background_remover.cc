@@ -198,8 +198,8 @@ struct Padding {
 static void padMat(cv::Mat &m, const Padding &pad) {
     const auto type = m.type();
     if (pad.l || pad.r) {
-        const cv::Mat padl = cv::Mat::zeros(pad.l, m.rows, type);
-        const cv::Mat padr = cv::Mat::zeros(pad.r, m.rows, type);
+        const cv::Mat padl = cv::Mat::zeros(m.rows, pad.l, type);
+        const cv::Mat padr = cv::Mat::zeros(m.rows, pad.r, type);
         cv::hconcat(std::array<cv::Mat, 3>({padl, m, padr}), m);
     }
 

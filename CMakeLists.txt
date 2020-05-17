@@ -54,6 +54,12 @@ add_subdirectory(gflags EXCLUDE_FROM_ALL)
 
 
 ## Default target
+
+set(SANITIZER_OPTS "-fno-omit-frame-pointer -fsanitize=thread -fsanitize=undefined")
+set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${SANITIZER_OPTS}")
+set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} ${SANITIZER_OPTS}")
+
+
 add_executable(bgr
     src/main.cc
 

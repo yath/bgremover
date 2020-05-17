@@ -162,7 +162,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     int maskw = width_ / stride_;
     int maskh = height_ / stride_;
 
-    cv::Mat ret = cv::Mat::zeros(cv::Size(maskw, maskh), CV_8U);
+    cv::Mat ret = cv::Mat::zeros(cv::Size(maskw, maskh), CV_32FC3);
 
     size_t size = TfLiteTensorByteSize(output_);
     void *data = TfLiteTensorData(output_);
@@ -176,7 +176,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
                           int label = static_cast<int>(max - l);
                           if (label != person_label) {
                               int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
-                              ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
+                              ret.at<cv::Vec3f>(cv::Point(pixel % maskw, pixel / maskw)) = {1.0, 1.0, 1.0};
                           }
                       });
     } else {
@@ -185,7 +185,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
         std::for_each(std::execution::seq /* XXX */, prob, prob + maskw * maskh, [&](float &p) {
             if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
                 int pixel = static_cast<int>(&p - prob);
-                ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
+                ret.at<cv::Vec3f>(cv::Point(pixel % maskw, pixel / maskw)) = {1.0, 1.0, 1.0};
             }
         });
     }
@@ -294,7 +294,16 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
       cv::blur(mask, mask, cv::Size(blur_width, blur_width));
     }
 
-    maskImage.copyTo(frame, mask);
+    // Create background and foreground layers weightened by the mask.
+    cv::Mat foreground;
+    frame.convertTo(foreground, CV_32FC3, 1.0/255.0);
+    cv::multiply(cv::Scalar::all(1.0) - mask, foreground, foreground);
+    cv::Mat background;
+    maskImage.convertTo(background, CV_32FC3, 1.0/255.0);
+    cv::multiply(mask, background, background);
+    // Assemble both layers again and convert back.
+    cv::add(foreground, background, frame);
+    frame.convertTo(frame, CV_8UC3, 255);
 
     auto end = Timing::now();
     t.mask += (end - startMask);

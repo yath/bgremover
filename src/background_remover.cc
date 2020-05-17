@@ -1,6 +1,8 @@
 #include "background_remover.h"
 
+#include "debug.h"
 #include "glog/logging.h"
+#include "opencv2/highgui.hpp"
 
 #ifdef WITH_GL
 #include "tensorflow/lite/delegates/gpu/delegate.h"
@@ -259,6 +261,13 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &
     CHECK_EQ(frame.size, maskImage.size);
     Padding pad;
     cv::Mat small = resizeAndPadTo(frame, width_, height_, pad);
+
+    if (debug_flags & DebugFlagShowModelInputFrame) {
+        cv::Mat bgr;
+        cv::cvtColor(small, bgr, cv::COLOR_RGB2BGR);
+        cv::imshow("model_input", bgr);
+    }
+
     cv::Mat input_float = makeInputTensor(small);
     CHECK_EQ(input_float.elemSize(), sizeof(float) * 3 /* channels */);
 

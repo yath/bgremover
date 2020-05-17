@@ -115,6 +115,4 @@ void VideoWriter::writeFrame(const cv::Mat& frame) {
 
     if (ret < total)
         LOG(WARNING) << "write() truncated (wrote " << ret << ", want " << total << " bytes)";
-    else
-        LOG(INFO) << "Wrote a " << total << " bytes frame";
 }

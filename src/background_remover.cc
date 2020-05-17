@@ -252,8 +252,11 @@ static cv::Mat resizeAndPadTo(cv::Mat frame, int targetw, int targeth, Padding &
     return ret;
 }
 
-void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
-                                       const cv::Mat &maskImage /* rgb */) {
+void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
+                                       Timing &t) {
+    t.nframes++;
+    auto start = Timing::now();
+
     CHECK_EQ(frame.size, maskImage.size);
     Padding pad;
     cv::Mat small = resizeAndPadTo(frame, width_, height_, pad);
@@ -263,11 +266,13 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     TfLiteTensorCopyFromBuffer(input_, (const void *)input_float.ptr<float>(),
                                width_ * height_ * sizeof(float) * 3);
 
-    auto start = std::chrono::steady_clock::now();
+    auto startInference = Timing::now();
+    t.prepare_input += (startInference - start);
+
     TfLiteInterpreterInvoke(interpreter_);
-    auto end = std::chrono::steady_clock::now();
-    auto diffMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    LOG(INFO) << "Inference time: " << diffMs << "ms";
+
+    auto startMask = Timing::now();
+    t.inference += (startMask - startInference);
 
     cv::Mat mask = getMaskFromOutput();
     unpadMat(mask, pad);
@@ -280,6 +285,10 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
                 frame.at<cv::Vec3b>(cv::Point(x, y)) = maskImage.at<cv::Vec3b>(cv::Point(x, y));
     // frame.setTo(maskImage, mask);
     // cv::bitwise_and(frame, mask, frame);
+
+    auto end = Timing::now();
+    t.mask += (end - startMask);
+    t.total += (end - start);
 }
 
 BackgroundRemover::~BackgroundRemover() {

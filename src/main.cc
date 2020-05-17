@@ -6,6 +6,7 @@
 #include "background_selector.h"
 #include "gflags/gflags.h"
 #include "glog/logging.h"
+#include "timing.h"
 #include "video_writer.h"
 
 DEFINE_string(model_filename, "deeplabv3_257_mv_gpu.tflite", "Model filename");
@@ -39,6 +40,9 @@ int main(int argc, char **argv) {
 
     VideoWriter wri(FLAGS_output_device_path.c_str(), frame.cols, frame.rows, V4L2_PIX_FMT_RGB24);
 
+    Timing timing;
+    auto timing_last_printed = Timing::now();
+
     bool doMask = true;
     while (1) {
         cap >> frame;
@@ -48,7 +52,7 @@ int main(int argc, char **argv) {
         }
 
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        if (doMask) bgr.maskBackground(frame, bgs.getBackground());
+        if (doMask) bgr.maskBackground(frame, bgs.getBackground(), timing);
 
         wri.writeFrame(frame);
 
@@ -80,6 +84,13 @@ int main(int argc, char **argv) {
 
             case 'q':
                 goto out;
+        }
+
+        if (std::chrono::duration_cast<std::chrono::seconds>(Timing::now() - timing_last_printed)
+                .count() >= 1) {
+            LOG(INFO) << "fps: " << timing.nframes << ", timing: " << timing;
+            timing.reset();
+            timing_last_printed = Timing::now();
         }
     }
 out:

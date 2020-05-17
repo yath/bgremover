@@ -4,6 +4,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "tensorflow/lite/c/c_api.h"
+#include "timing.h"
 
 class BackgroundRemover {
     enum class ModelType {
@@ -37,6 +38,6 @@ class BackgroundRemover {
                       int num_threads = 4);
     ~BackgroundRemover();
 
-    void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */);
+    void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */, Timing &t);
 };
 #endif  // BACKGROUND_REMOVER_H

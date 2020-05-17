@@ -191,12 +191,72 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     return ret;
 }
 
+struct Padding {
+    int l, r, t, b;
+};
+
+static void padMat(cv::Mat &m, const Padding &pad) {
+    const auto type = m.type();
+    if (pad.l || pad.r) {
+        const cv::Mat padl = cv::Mat::zeros(pad.l, m.rows, type);
+        const cv::Mat padr = cv::Mat::zeros(pad.r, m.rows, type);
+        cv::hconcat(std::array<cv::Mat, 3>({padl, m, padr}), m);
+    }
+
+    if (pad.t || pad.b) {
+        const cv::Mat padt = cv::Mat::zeros(pad.t, m.cols, type);
+        const cv::Mat padb = cv::Mat::zeros(pad.b, m.cols, type);
+        cv::vconcat(std::array<cv::Mat, 3>({padt, m, padb}), m);
+    }
+}
+
+static void unpadMat(cv::Mat &m, const Padding &pad) {
+    cv::Rect rect = cv::Rect(0, 0, m.cols, m.rows);
+    rect.x += pad.l;
+    rect.width -= (pad.l + pad.r);
+    rect.y += pad.t;
+    rect.height -= (pad.t + pad.b);
+    m = m(rect);
+}
+
+// stolen from tfjs-models/body-pix/src/util.ts
+static cv::Mat resizeAndPadTo(cv::Mat frame, int targetw, int targeth, Padding &pad) {
+    const int imgw = frame.cols;
+    const int imgh = frame.rows;
+
+    const float image_aspect = (float)imgw / (float)imgh;
+    const float target_aspect = (float)targetw / (float)targeth;
+
+    int resizew, resizeh;
+    if (image_aspect > target_aspect) {
+        resizew = targetw;
+        resizeh = std::ceil((float)resizew / image_aspect);
+
+        const int padh = targeth - resizeh;
+        pad.l = pad.r = 0;
+        pad.t = std::floor((float)padh / 2.);
+        pad.b = targeth - (resizeh + pad.t);
+    } else {
+        resizeh = targeth;
+        resizew = std::ceil((float)resizeh * image_aspect);
+
+        const int padw = targetw - resizew;
+        pad.l = std::floor((float)padw / 2.);
+        pad.r = targetw - (resizew + pad.l);
+        pad.t = pad.b = 0;
+    }
+
+    cv::Mat ret;
+    cv::resize(frame, ret, cv::Size(resizew, resizeh), cv::INTER_LINEAR);
+    padMat(ret, pad);
+    return ret;
+}
+
 void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
                                        const cv::Mat &maskImage /* rgb */) {
     CHECK_EQ(frame.size, maskImage.size);
-    cv::Mat small;
-    cv::resize(frame, small, cv::Size(width_, height_), interpolation_method);
-
+    Padding pad;
+    cv::Mat small = resizeAndPadTo(frame, width_, height_, pad);
     cv::Mat input_float = makeInputTensor(small);
     CHECK_EQ(input_float.elemSize(), sizeof(float) * 3 /* channels */);
 
@@ -210,6 +270,7 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     LOG(INFO) << "Inference time: " << diffMs << "ms";
 
     cv::Mat mask = getMaskFromOutput();
+    unpadMat(mask, pad);
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
 
     // XXX: Fix this.

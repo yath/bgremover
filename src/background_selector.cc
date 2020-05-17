@@ -40,6 +40,8 @@ void BackgroundSelector::loadImages() {
             continue;
         }
         cv::resize(img, img, cv::Size(width_, height_));
+        // Convert to floating point numbers to simplify manipulation later.
+        img.convertTo(img, CV_32FC3, 1.0/255.0);
 
         auto i = Image{path.filename(), img};
         LOG(INFO) << "Loaded " << i;
@@ -86,7 +88,7 @@ bool BackgroundSelector::changeMode(Mode m) {
 }
 
 static cv::Mat makeSolidBackground(const cv::Vec3b& color, int width, int height) {
-    return cv::Mat(cv::Size(width, height), CV_8UC3, color);
+    return cv::Mat(cv::Size(width, height), CV_32FC3, color);
 }
 
 void BackgroundSelector::changed() {

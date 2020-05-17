@@ -299,8 +299,7 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     frame.convertTo(foreground, CV_32FC3, 1.0/255.0);
     cv::multiply(cv::Scalar::all(1.0) - mask, foreground, foreground);
     cv::Mat background;
-    maskImage.convertTo(background, CV_32FC3, 1.0/255.0);
-    cv::multiply(mask, background, background);
+    cv::multiply(mask, maskImage, background);
     // Assemble both layers again and convert back.
     cv::add(foreground, background, frame);
     frame.convertTo(frame, CV_8UC3, 255);

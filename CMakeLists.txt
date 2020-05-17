@@ -84,7 +84,7 @@ if(WITH_GL)
         OpenGL::GL
         OpenGL::EGL
     )
-    target_sources(bgr PRIVATE egl_stubs.cc)
+    target_sources(bgr PRIVATE src/egl_stubs.cc)
     add_definitions(-DWITH_GL=1)
 else()
     add_definitions(-UWITH_GL)

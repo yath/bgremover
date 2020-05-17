@@ -121,7 +121,7 @@ static float maxVec3f(const cv::Vec3f &v) { return std::max({v[0], v[1], v[2]});
 static void checkValuesInRange(const cv::Mat &mat, float min, float max) {
 #ifndef NDEBUG
     const auto [matmin, matmax] = std::minmax_element(
-        std::execution::par_unseq, mat.begin<cv::Vec3f>(), mat.end<cv::Vec3f>(),
+        std::execution::seq /* XXX */, mat.begin<cv::Vec3f>(), mat.end<cv::Vec3f>(),
         [](const cv::Vec3f &a, const cv::Vec3f &b) { return minVec3f(a) < minVec3f(b); });
     CHECK_GE(minVec3f(*matmin), min);
     CHECK_LE(maxVec3f(*matmax), max);
@@ -140,7 +140,7 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
         case ModelType::BodypixResnet:
             img.convertTo(ret, CV_32FC3);
             // https://github.com/tensorflow/tfjs-models/blob/master/body-pix/src/resnet.ts#L22
-            std::for_each(std::execution::par_unseq, ret.begin<cv::Vec3f>(), ret.end<cv::Vec3f>(),
+            std::for_each(std::execution::seq /* XXX */, ret.begin<cv::Vec3f>(), ret.end<cv::Vec3f>(),
                           [](cv::Vec3f &v) { v += cv::Vec3f(-123.15, -115.90, -103.06); });
             checkValuesInRange(ret, -127., 255.);  // ?
             break;
@@ -170,7 +170,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     if (model_type_ == ModelType::DeeplabV3) {
         CHECK_EQ(size, maskw * maskh * sizeof(DeeplabV3Labels));
         DeeplabV3Labels *labels = (DeeplabV3Labels *)data;
-        std::for_each(std::execution::par_unseq, labels, labels + maskw * maskh,
+        std::for_each(std::execution::seq /* XXX */, labels, labels + maskw * maskh,
                       [&](DeeplabV3Labels l) {
                           float *max = std::max_element(l, l + deeplabv3_label_count);
                           int label = static_cast<int>(max - l);
@@ -182,7 +182,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     } else {
         CHECK_EQ(size, maskw * maskh * sizeof(float));
         float *prob = (float *)data;
-        std::for_each(std::execution::par_unseq, prob, prob + maskw * maskh, [&](float &p) {
+        std::for_each(std::execution::seq /* XXX */, prob, prob + maskw * maskh, [&](float &p) {
             if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
                 int pixel = static_cast<int>(&p - prob);
                 ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;

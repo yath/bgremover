@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
 
     bool doMask = true;
     while (1) {
+        timing.nframes++;
         cap >> frame;
         if (frame.empty()) {
             LOG(ERROR) << "Empty frame received";

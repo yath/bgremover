@@ -254,7 +254,6 @@ static cv::Mat resizeAndPadTo(cv::Mat frame, int targetw, int targeth, Padding &
 
 void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
                                        Timing &t) {
-    t.nframes++;
     auto start = Timing::now();
 
     CHECK_EQ(frame.size, maskImage.size);

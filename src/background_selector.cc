@@ -8,7 +8,7 @@
 
 constexpr uint8_t nthByte(unsigned long byte, int n) { return ((byte >> (n * 8)) & 0xff); }
 
-static std::vector<cv::Vec3b> parseColorList(std::string color_list) {
+static std::vector<cv::Vec3b> parseColorList(const std::string& color_list) {
     std::vector<cv::Vec3b> ret;
 
     std::stringstream colors(color_list);
@@ -27,7 +27,7 @@ std::ostream& operator<<(std::ostream& os, const BackgroundSelector::Image& i) {
 
 void BackgroundSelector::loadImages() {
     for (auto& p : std::filesystem::directory_iterator(image_dir_)) {
-        auto path = p.path();
+        const auto& path = p.path();
 
         if (!p.is_regular_file()) {
             LOG(WARNING) << path << " is not a regular file, skipping";
@@ -48,13 +48,13 @@ void BackgroundSelector::loadImages() {
     }
 
     std::sort(images_.begin(), images_.end(),
-              [](BackgroundSelector::Image a, BackgroundSelector::Image b) {
+              [](const BackgroundSelector::Image& a, const BackgroundSelector::Image& b) {
                   return a.filename < b.filename;
               });
 }
 
-BackgroundSelector::BackgroundSelector(std::string image_dir, std::string color_list, int width,
-                                       int height)
+BackgroundSelector::BackgroundSelector(const std::string& image_dir, const std::string& color_list,
+                                       int width, int height)
     : curr_image_(0),
       curr_color_(0),
       curr_mode_(Mode::Undefined),
@@ -86,7 +86,7 @@ bool BackgroundSelector::changeMode(Mode m) {
     return true;
 }
 
-static cv::Mat makeSolidBackground(cv::Vec3b color, int width, int height) {
+static cv::Mat makeSolidBackground(const cv::Vec3b& color, int width, int height) {
     return cv::Mat(cv::Size(width, height), CV_8UC3, color);
 }
 

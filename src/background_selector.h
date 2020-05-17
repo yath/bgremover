@@ -24,8 +24,7 @@ class BackgroundSelector {
     std::vector<Image> images_;
     std::vector<cv::Vec3b> colors_;
 
-    int curr_image_;
-    int curr_color_;
+    unsigned int curr_image_, curr_color_;
     Mode curr_mode_;
     cv::Mat curr_background_;
 
@@ -36,7 +35,8 @@ class BackgroundSelector {
     friend std::ostream& operator<<(std::ostream& os, const Image& i);
 
    public:
-    BackgroundSelector(std::string image_dir, std::string color_list, int width, int height);
+    BackgroundSelector(const std::string& image_dir, const std::string& color_list, int width,
+                       int height);
     void selectPrevColor();
     void selectNextColor();
     void selectPrevImage();

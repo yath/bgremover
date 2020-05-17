@@ -7,7 +7,10 @@
 struct Timing {
     using duration = std::chrono::steady_clock::duration;
 
+    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes): Intentionally.
     unsigned int nframes;
+
+    // NOLINTNEXTLINE(misc-non-private-member-variables-in-classes): Intentionally.
     duration prepare_input, inference, mask, total;
 
     static std::chrono::time_point<std::chrono::steady_clock> now() {

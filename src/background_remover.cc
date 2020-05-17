@@ -62,7 +62,7 @@ BackgroundRemover::BackgroundRemover(const std::string &model_filename,
     TfLiteInterpreterOptionsSetNumThreads(options_, num_threads);
     TfLiteInterpreterOptionsSetErrorReporter(
         options_,
-        [](void *unused, const char *fmt, va_list args) {
+        [](void * /* unused */, const char *fmt, va_list args) {
             std::vector<char> buf(vsnprintf(nullptr, 0, fmt, args) + 1);
             std::vsnprintf(buf.data(), buf.size(), fmt, args);
             LOG(ERROR) << "Tensorflow: " << buf.data();
@@ -153,7 +153,7 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
 }
 
 // constexpr float logit(float x) { return std::log(x / (1. - x)); }
-static inline float expit(float x) { return 1. / (1. + std::exp(-x)); }
+static inline float expit(float x) { return 1.f / (1.f + std::exp(-x)); }
 
 cv::Mat BackgroundRemover::getMaskFromOutput() {
     constexpr int person_label = 15;  // XXX
@@ -173,9 +173,9 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
         std::for_each(std::execution::par_unseq, labels, labels + maskw * maskh,
                       [&](DeeplabV3Labels l) {
                           float *max = std::max_element(l, l + deeplabv3_label_count);
-                          int label = max - l;
+                          int label = static_cast<int>(max - l);
                           if (label != person_label) {
-                              int pixel = (DeeplabV3Labels *)l - labels;
+                              int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
                               ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
                           }
                       });
@@ -184,7 +184,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
         float *prob = (float *)data;
         std::for_each(std::execution::par_unseq, prob, prob + maskw * maskh, [&](float &p) {
             if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
-                int pixel = &p - prob;
+                int pixel = static_cast<int>(&p - prob);
                 ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
             }
         });
@@ -222,7 +222,7 @@ static void unpadMat(cv::Mat &m, const Padding &pad) {
 }
 
 // stolen from tfjs-models/body-pix/src/util.ts
-static cv::Mat resizeAndPadTo(cv::Mat frame, int targetw, int targeth, Padding &pad) {
+static cv::Mat resizeAndPadTo(const cv::Mat &frame, int targetw, int targeth, Padding &pad) {
     const int imgw = frame.cols;
     const int imgh = frame.rows;
 

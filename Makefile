@@ -14,7 +14,7 @@ builddir:
 
 .PHONY: tidy
 tidy: builddir
-	clang-tidy -p build $(SRCS)
+	clang-tidy -p build $(SRCS) -checks=bugprone-*,clang-analyzer-*,misc-*,performance-*,portability-*
 
 .PHONY: format
 format:

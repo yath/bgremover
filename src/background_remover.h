@@ -40,6 +40,8 @@ class BackgroundRemover {
     ~BackgroundRemover();
 
     void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
-                        bool do_blur_mask, Timing &t);
+                        bool do_blur_mask,
+                        bool do_blend_layers,
+                        Timing &t);
 };
 #endif  // BACKGROUND_REMOVER_H

@@ -40,7 +40,6 @@ void BackgroundSelector::loadImages() {
             continue;
         }
         cv::resize(img, img, cv::Size(width_, height_));
-        cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
         auto i = Image{path.filename(), img};
         LOG(INFO) << "Loaded " << i;

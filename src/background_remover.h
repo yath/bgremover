@@ -39,6 +39,6 @@ class BackgroundRemover {
                       int num_threads = 4);
     ~BackgroundRemover();
 
-    void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */, Timing &t);
+    void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */, bool do_blur_mask, Timing &t);
 };
 #endif  // BACKGROUND_REMOVER_H

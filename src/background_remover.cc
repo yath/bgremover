@@ -154,7 +154,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     constexpr int person_label = 15;  // XXX
     constexpr float threshold = .7;   // XXX
 
-    cv::Mat ret = cv::Mat::zeros(cv::Size(outwidth_, outheight_), CV_8U);
+    cv::Mat ret = cv::Mat::zeros(cv::Size(outwidth_, outheight_), CV_32FC3);
 
     size_t size = TfLiteTensorByteSize(output_);
     void *data = TfLiteTensorData(output_);
@@ -169,7 +169,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
                 int label = static_cast<int>(max - l);
                 if (label != person_label) {
                     int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
-                    ret.at<unsigned char>(cv::Point(pixel % outwidth_, pixel / outheight_)) = 1;
+                    ret.at<cv::Vec3f>(cv::Point(pixel % outwidth_, pixel / outheight_)) = {1.0, 1.0, 1.0};
                 }
             });
     } else {
@@ -179,7 +179,7 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
             std::execution::seq /* XXX */, prob, prob + outwidth_ * outheight_, [&](float &p) {
                 if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
                     int pixel = static_cast<int>(&p - prob);
-                    ret.at<unsigned char>(cv::Point(pixel % outwidth_, pixel / outwidth_)) = 1;
+                    ret.at<cv::Vec3f>(cv::Point(pixel % outwidth_, pixel / outwidth_)) = {1.0, 1.0, 1.0};
                 }
             });
     }
@@ -248,7 +248,9 @@ static cv::Mat resizeAndPadTo(const cv::Mat &frame, int targetw, int targeth, Pa
     return ret;
 }
 
-void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
+void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
+                                       const cv::Mat &maskImage /* rgb */,
+                                       bool do_blur_mask,
                                        Timing &t) {
     auto start = Timing::now();
 
@@ -280,13 +282,21 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &
     unpadMat(mask, pad);
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
 
-    // XXX: Fix this.
-    for (int x = 0; x < frame.cols; x++)
-        for (int y = 0; y < frame.rows; y++)
-            if (mask.at<unsigned char>(cv::Point(x, y)))
-                frame.at<cv::Vec3b>(cv::Point(x, y)) = maskImage.at<cv::Vec3b>(cv::Point(x, y));
-    // frame.setTo(maskImage, mask);
-    // cv::bitwise_and(frame, mask, frame);
+    if (do_blur_mask) {
+      // Use a reasonable size depending on the resolution.
+      int blur_width = frame.cols / 64;
+      cv::blur(mask, mask, cv::Size(blur_width, blur_width));
+    }
+
+    // Create background and foreground layers weightened by the mask.
+    cv::Mat foreground;
+    frame.convertTo(foreground, CV_32FC3, 1.0/255.0);
+    cv::multiply(cv::Scalar::all(1.0) - mask, foreground, foreground);
+    cv::Mat background;
+    cv::multiply(mask, maskImage, background);
+    // Assemble both layers again and convert back.
+    cv::add(foreground, background, frame);
+    frame.convertTo(frame, CV_8UC3, 255);
 
     auto end = Timing::now();
     t.mask += (end - startMask);

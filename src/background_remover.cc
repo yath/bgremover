@@ -92,26 +92,21 @@ BackgroundRemover::BackgroundRemover(const std::string &model_filename,
     LOG(INFO) << "Output tensor: " << tensor_shape(output_);
     CHECK_EQ(TfLiteTensorType(output_), kTfLiteFloat32) << "output tensor must be float32";
     CHECK_EQ(TfLiteTensorNumDims(output_), 4) << "output tensor must have 4 dimensions";
-    int outw = TfLiteTensorDim(output_, 1);
-    CHECK_EQ(width_ % outw, 0) << "output tensor width is not a multiple of input tensor width";
-    stride_ = width_ / outw;
-    int outh = TfLiteTensorDim(output_, 2);
-    CHECK_EQ(height_ % outh, 0) << "output tensor height is not a multiple of input tensor height";
-    CHECK_EQ(height_ / outh, stride_) << "vertical stride doesn't match horizontal stride";
+
+    outwidth_ = TfLiteTensorDim(output_, 1);
+    outheight_ = TfLiteTensorDim(output_, 2);
 
     if (model_type_ == ModelType::DeeplabV3) {
-        CHECK_EQ(stride_, 1);
+        CHECK_EQ(outwidth_, width_) << "output tensor width does not match input tensor width";
+        CHECK_EQ(outheight_, height_) << "output tensor height does not match input tensor height";
         CHECK_EQ(TfLiteTensorDim(output_, 3), deeplabv3_label_count);
-    } else if (model_type_ == ModelType::BodypixResnet) {
-        CHECK(stride_ == 16 || stride_ == 32);
-        CHECK_EQ(TfLiteTensorDim(output_, 3), 1);
-    } else if (model_type_ == ModelType::BodypixMobilenet) {
-        CHECK(stride_ == 8 || stride_ == 16);
+    } else if (model_type_ == ModelType::BodypixResnet ||
+               model_type_ == ModelType::BodypixMobilenet) {
         CHECK_EQ(TfLiteTensorDim(output_, 3), 1);
     }
 
-    LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_
-              << "px input and stride=" << stride_ << " for model " << model_filename;
+    LOG(INFO) << "Initialized tflite with " << width_ << "x" << height_ << "px input and "
+              << outwidth_ << "x" << outheight_ << "px output for model " << model_filename;
 }
 
 static float minVec3f(const cv::Vec3f &v) { return std::min({v[0], v[1], v[2]}); }
@@ -159,35 +154,34 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     constexpr int person_label = 15;  // XXX
     constexpr float threshold = .7;   // XXX
 
-    int maskw = width_ / stride_;
-    int maskh = height_ / stride_;
-
-    cv::Mat ret = cv::Mat::zeros(cv::Size(maskw, maskh), CV_8U);
+    cv::Mat ret = cv::Mat::zeros(cv::Size(outwidth_, outheight_), CV_8U);
 
     size_t size = TfLiteTensorByteSize(output_);
     void *data = TfLiteTensorData(output_);
 
     if (model_type_ == ModelType::DeeplabV3) {
-        CHECK_EQ(size, maskw * maskh * sizeof(DeeplabV3Labels));
+        CHECK_EQ(size, outwidth_ * outheight_ * sizeof(DeeplabV3Labels));
         DeeplabV3Labels *labels = (DeeplabV3Labels *)data;
-        std::for_each(std::execution::seq /* XXX */, labels, labels + maskw * maskh,
-                      [&](DeeplabV3Labels l) {
-                          float *max = std::max_element(l, l + deeplabv3_label_count);
-                          int label = static_cast<int>(max - l);
-                          if (label != person_label) {
-                              int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
-                              ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
-                          }
-                      });
+        std::for_each(
+            std::execution::seq /* XXX */, labels, labels + outwidth_ * outheight_,
+            [&](DeeplabV3Labels l) {
+                float *max = std::max_element(l, l + deeplabv3_label_count);
+                int label = static_cast<int>(max - l);
+                if (label != person_label) {
+                    int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
+                    ret.at<unsigned char>(cv::Point(pixel % outwidth_, pixel / outheight_)) = 1;
+                }
+            });
     } else {
-        CHECK_EQ(size, maskw * maskh * sizeof(float));
+        CHECK_EQ(size, outwidth_ * outheight_ * sizeof(float));
         float *prob = (float *)data;
-        std::for_each(std::execution::seq /* XXX */, prob, prob + maskw * maskh, [&](float &p) {
-            if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
-                int pixel = static_cast<int>(&p - prob);
-                ret.at<unsigned char>(cv::Point(pixel % maskw, pixel / maskw)) = 1;
-            }
-        });
+        std::for_each(
+            std::execution::seq /* XXX */, prob, prob + outwidth_ * outheight_, [&](float &p) {
+                if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
+                    int pixel = static_cast<int>(&p - prob);
+                    ret.at<unsigned char>(cv::Point(pixel % outwidth_, pixel / outwidth_)) = 1;
+                }
+            });
     }
 
     return ret;

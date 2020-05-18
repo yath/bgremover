@@ -42,6 +42,7 @@ void BackgroundSelector::loadImages() {
         cv::resize(img, img, cv::Size(width_, height_));
         // Convert to floating point numbers to simplify manipulation later.
         img.convertTo(img, CV_32FC3, 1.0/255.0);
+        cv::cvtColor(img, img, cv::COLOR_BGR2RGB);
 
         auto i = Image{path.filename(), img};
         LOG(INFO) << "Loaded " << i;

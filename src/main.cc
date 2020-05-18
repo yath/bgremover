@@ -78,13 +78,15 @@ int main(int argc, char** argv) {
             break;
         }
 
+        cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
         if (do_mask) bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, timing);
 
+        wri.writeFrame(frame);
+
         if (debug_flags & DebugFlagShowOutputFrame) {
+            cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
             cv::imshow("frame", frame);
         }
-        cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        wri.writeFrame(frame);
 
         auto key = cv::waitKey(1);
         switch (key) {

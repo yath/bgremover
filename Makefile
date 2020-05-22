@@ -17,8 +17,11 @@ tidy: builddir
 	clang-tidy -p build $(SRCS) -checks=bugprone-*,clang-analyzer-*,misc-*,performance-*,portability-*
 
 .PHONY: format
-format:
-	clang-format -style='{BasedOnStyle: Google, IndentWidth: 4, ColumnLimit: 100}' -i $(SRCS)
+format: .clang-format
+	clang-format -style=file -i $(SRCS)
+
+.clang-format:
+	clang-format -style='{BasedOnStyle: Google, IndentWidth: 4, ColumnLimit: 100}' --dump-config > $@
 
 .PHONY: clean
 clean:

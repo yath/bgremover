@@ -248,10 +248,8 @@ static cv::Mat resizeAndPadTo(const cv::Mat &frame, int targetw, int targeth, Pa
     return ret;
 }
 
-void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
-                                       const cv::Mat &maskImage /* rgb */,
-                                       bool do_blur_mask,
-                                       Timing &t) {
+void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
+                                       bool do_blur_mask, Timing &t) {
     auto start = Timing::now();
 
     CHECK_EQ(frame.size, maskImage.size);
@@ -283,9 +281,9 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
 
     if (do_blur_mask) {
-      // Use a reasonable size depending on the resolution.
-      int blur_width = frame.cols / 64;
-      cv::blur(mask, mask, cv::Size(blur_width, blur_width));
+        // Use a reasonable size depending on the resolution.
+        int blur_width = frame.cols / 64;
+        cv::blur(mask, mask, cv::Size(blur_width, blur_width));
     }
 
     maskImage.copyTo(frame, mask);

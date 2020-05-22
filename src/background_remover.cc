@@ -16,14 +16,22 @@
 #include <numeric>
 #include <vector>
 
-const char *deeplabv3_label_names[] = {
-    "background", "aeroplane", "bicycle",     "bird",  "board",       "bottle", "bus",
-    "car",        "cat",       "chair",       "cow",   "diningtable", "dog",    "horse",
-    "motorbike",  "person",    "pottedplant", "sheep", "sofa",        "train",  "tv",
+struct Label {
+    const std::string name;
+    const cv::Vec3b color /* bgr */;
 };
 
-constexpr int deeplabv3_label_count =
-    sizeof(deeplabv3_label_names) / sizeof(deeplabv3_label_names[0]);
+const Label deeplabv3_labels[]{
+    {"background", {0, 0, 0}},   {"aeroplane", {0, 0, 128}},  {"bicycle", {0, 128, 0}},
+    {"bird", {0, 128, 128}},     {"board", {128, 0, 0}},      {"bottle", {128, 0, 128}},
+    {"bus", {128, 128, 0}},      {"car", {128, 128, 128}},    {"cat", {0, 0, 64}},
+    {"chair", {0, 0, 192}},      {"cow", {0, 128, 64}},       {"diningtable", {0, 128, 192}},
+    {"dog", {128, 0, 64}},       {"horse", {128, 0, 192}},    {"motorbike", {128, 128, 64}},
+    {"person", {128, 128, 192}}, {"pottedplant", {0, 64, 0}}, {"sheep", {0, 64, 128}},
+    {"sofa", {0, 192, 0}},       {"train", {0, 192, 128}},    {"tv", {128, 64, 0}},
+};
+
+constexpr int deeplabv3_label_count = sizeof(deeplabv3_labels) / sizeof(deeplabv3_labels[0]);
 typedef float DeeplabV3Labels[deeplabv3_label_count];
 
 static std::string tensor_shape(const TfLiteTensor *t) {
@@ -135,7 +143,8 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
         case ModelType::BodypixResnet:
             img.convertTo(ret, CV_32FC3);
             // https://github.com/tensorflow/tfjs-models/blob/master/body-pix/src/resnet.ts#L22
-            std::for_each(std::execution::seq /* XXX */, ret.begin<cv::Vec3f>(), ret.end<cv::Vec3f>(),
+            std::for_each(std::execution::seq /* XXX */, ret.begin<cv::Vec3f>(),
+                          ret.end<cv::Vec3f>(),
                           [](cv::Vec3f &v) { v += cv::Vec3f(-123.15, -115.90, -103.06); });
             checkValuesInRange(ret, -127., 255.);  // ?
             break;
@@ -162,16 +171,24 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     if (model_type_ == ModelType::DeeplabV3) {
         CHECK_EQ(size, outwidth_ * outheight_ * sizeof(DeeplabV3Labels));
         DeeplabV3Labels *labels = (DeeplabV3Labels *)data;
-        std::for_each(
-            std::execution::seq /* XXX */, labels, labels + outwidth_ * outheight_,
-            [&](DeeplabV3Labels l) {
-                float *max = std::max_element(l, l + deeplabv3_label_count);
-                int label = static_cast<int>(max - l);
-                if (label != person_label) {
-                    int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
-                    ret.at<unsigned char>(cv::Point(pixel % outwidth_, pixel / outheight_)) = 1;
-                }
-            });
+
+        cv::Mat modelOutputImage;
+        if (debug_flags & DebugFlagShowModelOutput)
+            modelOutputImage = cv::Mat(cv::Size(outwidth_, outheight_), CV_8UC3);
+
+        std::for_each(std::execution::seq /* XXX */, labels, labels + outwidth_ * outheight_,
+                      [&](DeeplabV3Labels l) {
+                          float *max = std::max_element(l, l + deeplabv3_label_count);
+                          int label = static_cast<int>(max - l);
+                          int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
+                          auto xy = cv::Point(pixel % outwidth_, pixel / outheight_);
+                          if (debug_flags & DebugFlagShowModelOutput) {
+                              CHECK_LT(label, deeplabv3_label_count);
+                              modelOutputImage.at<cv::Vec3b>(xy) = deeplabv3_labels[label].color;
+                          }
+                          if (label != person_label) ret.at<unsigned char>(xy) = 1;
+                      });
+        if (debug_flags & DebugFlagShowModelOutput) cv::imshow("model_output", modelOutputImage);
     } else {
         CHECK_EQ(size, outwidth_ * outheight_ * sizeof(float));
         float *prob = (float *)data;

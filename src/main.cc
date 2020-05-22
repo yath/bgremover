@@ -39,6 +39,8 @@ static int parseDebugFlags(const std::string& s) {
             ret |= DebugFlagShowOutputFrame;
         else if (flag == "show_model_input_frame")
             ret |= DebugFlagShowModelInputFrame;
+        else if (flag == "show_model_output")
+            ret |= DebugFlagShowModelOutput;
         else
             CHECK(0) << "Unknown debug flag " << flag;
     }

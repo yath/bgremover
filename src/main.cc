@@ -1,3 +1,4 @@
+#include <opencv2/core/utils/logger.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -53,8 +54,10 @@ int main(int argc, char** argv) {
     FLAGS_logtostderr = true;
     google::ParseCommandLineFlags(&argc, &argv, false);
     google::InitGoogleLogging(argv[0]);
+    cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_INFO);
 
     debug_flags = parseDebugFlags(FLAGS_debug_flags);
+
 
     BackgroundRemover bgr(FLAGS_model_filename, FLAGS_model_type);
     cv::VideoCapture cap(FLAGS_input_device_number);

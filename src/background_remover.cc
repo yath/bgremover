@@ -32,7 +32,8 @@ const Label deeplabv3_labels[]{
 };
 
 constexpr int deeplabv3_label_count = sizeof(deeplabv3_labels) / sizeof(deeplabv3_labels[0]);
-typedef float DeeplabV3Labels[deeplabv3_label_count];
+typedef cv::Vec<float, deeplabv3_label_count> DeeplabV3Labels;
+constexpr int deeplabv3_labels_type = CV_32FC(deeplabv3_label_count);
 
 static std::string tensor_shape(const TfLiteTensor *t) {
     std::stringstream ret;
@@ -123,11 +124,13 @@ static float maxVec3f(const cv::Vec3f &v) { return std::max({v[0], v[1], v[2]});
 
 static void checkValuesInRange(const cv::Mat &mat, float min, float max) {
 #ifndef NDEBUG
-    const auto [matmin, matmax] = std::minmax_element(
-        std::execution::seq /* XXX */, mat.begin<cv::Vec3f>(), mat.end<cv::Vec3f>(),
-        [](const cv::Vec3f &a, const cv::Vec3f &b) { return minVec3f(a) < minVec3f(b); });
-    CHECK_GE(minVec3f(*matmin), min);
-    CHECK_LE(maxVec3f(*matmax), max);
+    // Leave some tolerance for FP comparison.
+    min += (min / 100.);
+    max += (max / 100.);
+    mat.forEach<cv::Vec3f>([&](const cv::Vec3f &v, const int loc[]) -> void {
+        CHECK_GE(minVec3f(v), min) << v << " at " << cv::Point(loc[1], loc[0]);
+        CHECK_LE(maxVec3f(v), max) << v << " at " << cv::Point(loc[1], loc[0]);
+    });
 #endif
 }
 
@@ -143,9 +146,8 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
         case ModelType::BodypixResnet:
             img.convertTo(ret, CV_32FC3);
             // https://github.com/tensorflow/tfjs-models/blob/master/body-pix/src/resnet.ts#L22
-            std::for_each(std::execution::seq /* XXX */, ret.begin<cv::Vec3f>(),
-                          ret.end<cv::Vec3f>(),
-                          [](cv::Vec3f &v) { v += cv::Vec3f(-123.15, -115.90, -103.06); });
+            ret.forEach<cv::Vec3f>(
+                [&](cv::Vec3f &v, const int[]) { v += cv::Vec3f(-123.15, -115.90, -103.06); });
             checkValuesInRange(ret, -127., 255.);  // ?
             break;
 
@@ -159,46 +161,47 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
 // constexpr float logit(float x) { return std::log(x / (1. - x)); }
 static inline float expit(float x) { return 1.f / (1.f + std::exp(-x)); }
 
+static int maxIdx(const DeeplabV3Labels &labels) {
+    int maxI[2];
+    cv::minMaxIdx(labels, nullptr, nullptr, nullptr, maxI);
+    CHECK_EQ(maxI[1], 0);
+    return maxI[0];
+}
+
 cv::Mat BackgroundRemover::getMaskFromOutput() {
     constexpr int person_label = 15;  // XXX
     constexpr float threshold = .7;   // XXX
 
-    cv::Mat ret = cv::Mat::zeros(cv::Size(outwidth_, outheight_), CV_8U);
+    cv::Mat_<unsigned char> ret = cv::Mat::zeros(cv::Size(outwidth_, outheight_), CV_8U);
 
     size_t size = TfLiteTensorByteSize(output_);
     void *data = TfLiteTensorData(output_);
 
     if (model_type_ == ModelType::DeeplabV3) {
-        CHECK_EQ(size, outwidth_ * outheight_ * sizeof(DeeplabV3Labels));
-        DeeplabV3Labels *labels = (DeeplabV3Labels *)data;
+        cv::Mat_<DeeplabV3Labels> labels =
+            cv::Mat(cv::Size(outwidth_, outheight_), deeplabv3_labels_type, data);
+        CHECK_EQ(size, labels.total() * labels.elemSize());
 
-        cv::Mat modelOutputImage;
-        if (debug_flags & DebugFlagShowModelOutput)
-            modelOutputImage = cv::Mat(cv::Size(outwidth_, outheight_), CV_8UC3);
+        ret.forEach([&](unsigned char &is_background, const int loc[]) -> void {
+            const auto p = cv::Point(loc[1], loc[0]);
+            is_background = maxIdx(labels(p)) != person_label;
+        });
 
-        std::for_each(std::execution::seq /* XXX */, labels, labels + outwidth_ * outheight_,
-                      [&](DeeplabV3Labels l) {
-                          float *max = std::max_element(l, l + deeplabv3_label_count);
-                          int label = static_cast<int>(max - l);
-                          int pixel = static_cast<int>((DeeplabV3Labels *)l - labels);
-                          auto xy = cv::Point(pixel % outwidth_, pixel / outheight_);
-                          if (debug_flags & DebugFlagShowModelOutput) {
-                              CHECK_LT(label, deeplabv3_label_count);
-                              modelOutputImage.at<cv::Vec3b>(xy) = deeplabv3_labels[label].color;
-                          }
-                          if (label != person_label) ret.at<unsigned char>(xy) = 1;
-                      });
-        if (debug_flags & DebugFlagShowModelOutput) cv::imshow("model_output", modelOutputImage);
-    } else {
-        CHECK_EQ(size, outwidth_ * outheight_ * sizeof(float));
-        float *prob = (float *)data;
-        std::for_each(
-            std::execution::seq /* XXX */, prob, prob + outwidth_ * outheight_, [&](float &p) {
-                if (expit(p) < threshold) {  // p > -logit(threshold) && p < logit(threshold)?
-                    int pixel = static_cast<int>(&p - prob);
-                    ret.at<unsigned char>(cv::Point(pixel % outwidth_, pixel / outwidth_)) = 1;
-                }
+        if (debug_flags & DebugFlagShowModelOutput) {
+            cv::Mat_<cv::Vec3b> img = cv::Mat(cv::Size(outwidth_, outheight_), CV_8UC3);
+            img.forEach([&](cv::Vec3b &color, const int loc[]) -> void {
+                const auto p = cv::Point(loc[1], loc[0]);
+                color = deeplabv3_labels[maxIdx(labels(p))].color;
             });
+            cv::imshow("model_output", img);
+        }
+    } else {
+        cv::Mat_<float> probs = cv::Mat(cv::Size(outwidth_, outheight_), CV_32FC1, data);
+        CHECK_EQ(size, probs.total() * probs.elemSize());
+        ret.forEach([&](unsigned char &is_background, const int loc[]) -> void {
+            const auto p = cv::Point(loc[1], loc[0]);
+            is_background = expit(probs(p)) < threshold;
+        });
     }
 
     return ret;

@@ -139,8 +139,9 @@ cv::Mat BackgroundRemover::makeInputTensor(const cv::Mat &img) {
     switch (model_type_) {
         case ModelType::DeeplabV3:
         case ModelType::BodypixMobilenet:
-            img.convertTo(ret, CV_32FC3, 1. / 255, -.5);
-            checkValuesInRange(ret, -.5, .5);
+            // https://github.com/tensorflow/models/blob/34a3581/research/deeplab/core/feature_extractor.py#L497-L498
+            img.convertTo(ret, CV_32FC3, 2. / 255., -1.);
+            checkValuesInRange(ret, -1., 1.);
             break;
 
         case ModelType::BodypixResnet:

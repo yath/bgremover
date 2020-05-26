@@ -183,9 +183,9 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
             cv::Mat(cv::Size(outwidth_, outheight_), deeplabv3_labels_type, data);
         CHECK_EQ(size, labels.total() * labels.elemSize());
 
-        ret.forEach([&](unsigned char &is_background, const int loc[]) -> void {
+        ret.forEach([&](unsigned char &bg_ratio, const int loc[]) -> void {
             const auto p = cv::Point(loc[1], loc[0]);
-            is_background = maxIdx(labels(p)) != person_label;
+            bg_ratio = (maxIdx(labels(p)) == person_label) ? 0 : 255;
         });
 
         if (debug_flags & DebugFlagShowModelOutput) {
@@ -199,9 +199,9 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     } else {
         cv::Mat_<float> probs = cv::Mat(cv::Size(outwidth_, outheight_), CV_32FC1, data);
         CHECK_EQ(size, probs.total() * probs.elemSize());
-        ret.forEach([&](unsigned char &is_background, const int loc[]) -> void {
+        ret.forEach([&](unsigned char &bg_ratio, const int loc[]) -> void {
             const auto p = cv::Point(loc[1], loc[0]);
-            is_background = expit(probs(p)) < threshold;
+            bg_ratio = (expit(probs(p)) < threshold) ? 255 : 0;
         });
     }
 
@@ -269,8 +269,37 @@ static cv::Mat resizeAndPadTo(const cv::Mat &frame, int targetw, int targeth, Pa
     return ret;
 }
 
-void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
-                                       bool do_blur_mask, Timing &t) {
+static cv::Vec3b blendPixels(const cv::Vec3b &a,
+                             const cv::Vec3b &b,
+                             unsigned char ratio) {
+    cv::Vec3b result;
+    for (int cn = 0; cn < result.channels; cn++) {
+        int mix = 0;
+        mix += (ratio * b[cn]) / 255;
+        mix += ((255-ratio) * a[cn]) / 255;
+        result[cn] = mix;
+    }
+    return result;
+}
+
+static void blendLayersTo(const cv::Mat &foreground,
+                          const cv::Mat &background,
+                          const cv::Mat &mask,
+                          cv::Mat &output) {
+    output.forEach<cv::Vec3b>([&](cv::Vec3b &o, const int loc[]) -> void {
+        const auto p = cv::Point(loc[1], loc[0]);
+        o = blendPixels(
+                foreground.at<cv::Vec3b>(p),
+                background.at<cv::Vec3b>(p),
+                mask.at<unsigned char>(p));
+    });
+}
+
+void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
+                                       const cv::Mat &maskImage /* rgb */,
+                                       bool do_blur_mask,
+                                       bool do_blend_layers,
+                                       Timing &t) {
     auto start = Timing::now();
 
     CHECK_EQ(frame.size, maskImage.size);
@@ -307,7 +336,11 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &
         cv::blur(mask, mask, cv::Size(blur_width, blur_width));
     }
 
-    maskImage.copyTo(frame, mask);
+    if (do_blend_layers) {
+      blendLayersTo(/*foreground=*/frame, /*background=*/maskImage, mask, /*output=*/frame);
+    } else {
+      maskImage.copyTo(frame, mask);
+    }
 
     auto end = Timing::now();
     t.mask += (end - startMask);

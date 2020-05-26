@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
 
     bool do_mask = true;
     bool do_blur_mask = true;
+    bool do_blend_layers = false;
     while (1) {
         timing.nframes++;
         cap >> frame;
@@ -84,7 +85,8 @@ int main(int argc, char** argv) {
         }
 
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        if (do_mask) bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, timing);
+        if (do_mask)
+            bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, do_blend_layers, timing);
 
         wri.writeFrame(frame);
 
@@ -103,6 +105,11 @@ int main(int argc, char** argv) {
             case 's':
                 do_blur_mask = !do_blur_mask;
                 LOG(INFO) << (do_blur_mask ? "enabled" : "disabled") << " mask blurring";
+                break;
+
+            case 'b':
+                do_blend_layers = !do_blend_layers;
+                LOG(INFO) << (do_blur_mask ? "enabled" : "disabled") << " alpha blending layers";
                 break;
 
             case 'C':

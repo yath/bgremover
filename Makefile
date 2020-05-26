@@ -1,5 +1,7 @@
 SRCS := $(wildcard src/*.cc src/*.h)
 
+BUILD_TYPE ?= Release
+
 .PHONY: all
 all: builddir deeplabv3_257_mv_gpu.tflite
 	$(MAKE) -C build
@@ -10,7 +12,7 @@ deeplabv3_257_mv_gpu.tflite:
 .PHONY: builddir
 builddir:
 	mkdir -p build
-	(cd build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..)
+	(cd build && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..)
 
 .PHONY: tidy
 tidy: builddir

@@ -62,6 +62,8 @@ int main(int argc, char** argv) {
     BackgroundRemover bgr(FLAGS_model_filename, FLAGS_model_type);
     cv::VideoCapture cap(FLAGS_input_device_number);
 
+    cv::Mat frozen_frame;
+
     cv::Mat frame;
     cap >> frame;  // Capture a frame to determine output WxH
     CHECK(!frame.empty()) << "Empty frame captured from video input " << FLAGS_input_device_number;
@@ -76,26 +78,34 @@ int main(int argc, char** argv) {
     bool do_mask = true;
     bool do_blur_mask = true;
     bool do_blend_layers = false;
+    bool is_frozen = false;
     while (1) {
         timing.nframes++;
-        cap >> frame;
+        // The frame data is in BGR format.
+        if (is_frozen)
+            frozen_frame.copyTo(frame);
+        else
+            cap >> frame;
+
         if (frame.empty()) {
             LOG(ERROR) << "Empty frame received";
             break;
         }
-
+	// Convert to RGB for deducing the mask and writing to the virtual camera.
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        if (do_mask)
+        if (do_mask && !is_frozen)
             bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, do_blend_layers, timing);
 
+        // Frame is written as RGB to the virtual camera.
         wri.writeFrame(frame);
 
+        // Swapping back to BGR is required for the preview as well as the freeze frame function.
+        cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
         if (debug_flags & DebugFlagShowOutputFrame) {
-            cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
             cv::imshow("frame", frame);
         }
 
-        auto key = cv::waitKey(1);
+        auto key = cv::waitKey(is_frozen ? 1000 : 1);
         switch (key) {
             case ' ':
                 do_mask = !do_mask;
@@ -128,13 +138,24 @@ int main(int argc, char** argv) {
                 bgs.selectNextImage();
                 break;
 
+            case 'f':
+                is_frozen = !is_frozen;
+                LOG(INFO) << (is_frozen ? "enabled" : "disabled") << " frame freezing";
+                if (is_frozen) {
+                  // Store the current frame (BGR).
+                  frame.copyTo(frozen_frame);
+                }
+                break;
+
             case 'q':
                 goto out;
         }
 
         if (std::chrono::duration_cast<std::chrono::seconds>(Timing::now() - timing_last_printed)
                 .count() >= 1) {
-            LOG(INFO) << "fps: " << timing.nframes << ", timing: " << timing;
+            LOG(INFO) << "fps: " << timing.nframes
+                      << (is_frozen ? " (frozen)" : "")
+                      << ", timing: " << timing;
             timing.reset();
             timing_last_printed = Timing::now();
         }

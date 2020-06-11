@@ -70,8 +70,6 @@ The masking behaviour can be changed at runtime with several keys (sent to the p
 * `libgflags-dev` shouldn’t be needed for building, but without it `gflags` and `glog` are using
   different namespaces and I haven’t figured out how to summon CMake.
 
-* There’s preliminary support for BodyPix models, but I haven’t had the time to get it working.
-
 * Much more. Please send a pull request.
 
 # License

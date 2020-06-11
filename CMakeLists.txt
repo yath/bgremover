@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 
 project(bgremover)
 
-set(SANITIZER_OPTS "-fno-omit-frame-pointer -fsanitize=thread -fsanitize=undefined")
+# set(SANITIZER_OPTS "-fno-omit-frame-pointer -fsanitize=thread -fsanitize=undefined")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${SANITIZER_OPTS}")
 set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} ${SANITIZER_OPTS}")
 

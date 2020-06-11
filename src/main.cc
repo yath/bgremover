@@ -119,7 +119,7 @@ int main(int argc, char** argv) {
 
             case 'b':
                 do_blend_layers = !do_blend_layers;
-                LOG(INFO) << (do_blur_mask ? "enabled" : "disabled") << " alpha blending layers";
+                LOG(INFO) << (do_blend_layers ? "enabled" : "disabled") << " alpha blending layers";
                 break;
 
             case 'C':

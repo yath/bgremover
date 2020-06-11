@@ -59,6 +59,8 @@ The masking behaviour can be changed at runtime with several keys (sent to the p
 
 * `i` and `I` cycle through the background images that were available at program startup.
 
+* `f` freezes the current frame.
+
 * `q` quits the program.
 
 # Bugs

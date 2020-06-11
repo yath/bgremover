@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <opencv2/imgproc.hpp>
 #include <sstream>
+#include <system_error>
 
 #include "glog/logging.h"
 
@@ -26,7 +27,8 @@ std::ostream& operator<<(std::ostream& os, const BackgroundSelector::Image& i) {
 }
 
 void BackgroundSelector::loadImages() {
-    for (auto& p : std::filesystem::directory_iterator(image_dir_)) {
+    std::error_code ec;
+    for (auto& p : std::filesystem::directory_iterator(image_dir_, ec)) {
         const auto& path = p.path();
 
         if (!p.is_regular_file()) {
@@ -45,6 +47,11 @@ void BackgroundSelector::loadImages() {
         auto i = Image{path.filename(), img};
         LOG(INFO) << "Loaded " << i;
         images_.push_back(i);
+    }
+
+    if (ec) {
+        LOG(WARNING) << "Can't load images from " << image_dir_ << ": " << ec.message();
+        return;
     }
 
     std::sort(images_.begin(), images_.end(),

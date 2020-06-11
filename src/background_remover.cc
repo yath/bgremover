@@ -1,6 +1,7 @@
 #include "background_remover.h"
 
 #include "debug.h"
+#include "gflags/gflags.h"
 #include "glog/logging.h"
 #include "opencv2/highgui.hpp"
 
@@ -15,6 +16,9 @@
 #include <execution>
 #include <numeric>
 #include <vector>
+
+DEFINE_double(bodypix_threshold, .2,
+              "Probability threshold for BodyPix models. 0 will set alpha to 1-probability.");
 
 struct Label {
     const std::string name;
@@ -170,7 +174,7 @@ static int maxIdx(const DeeplabV3Labels &labels) {
 
 cv::Mat BackgroundRemover::getMaskFromOutput() {
     constexpr int person_label = 15;  // XXX
-    constexpr float threshold = .7;   // XXX
+    const float threshold = FLAGS_bodypix_threshold;
 
     cv::Mat_<unsigned char> ret = cv::Mat::zeros(cv::Size(outwidth_, outheight_), CV_8U);
 
@@ -200,7 +204,10 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
         CHECK_EQ(size, probs.total() * probs.elemSize());
         ret.forEach([&](unsigned char &bg_ratio, const int loc[]) -> void {
             const auto p = cv::Point(loc[1], loc[0]);
-            bg_ratio = (expit(probs(p)) < threshold) ? 255 : 0;
+            if (threshold)
+                bg_ratio = (expit(probs(p)) < threshold) ? 255 : 0;
+            else
+                bg_ratio = 255 * (1 - expit(probs(p)));
         });
 
         if (debug_flags & DebugFlagShowModelOutput) {

@@ -326,6 +326,10 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
     t.inference += (startMask - startInference);
 
     cv::Mat mask = getMaskFromOutput();
+    if (small.size != mask.size) {
+        // For stride>1, resize back to input tensor size before unpadding.
+        cv::resize(mask, mask, cv::Size(small.cols, small.rows), interpolation_method);
+    }
     unpadMat(mask, pad);
     cv::resize(mask, mask, cv::Size(frame.cols, frame.rows), interpolation_method);
 

@@ -202,6 +202,16 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
             const auto p = cv::Point(loc[1], loc[0]);
             bg_ratio = (expit(probs(p)) < threshold) ? 255 : 0;
         });
+
+        if (debug_flags & DebugFlagShowModelOutput) {
+            cv::Mat_<cv::Vec3b> img = cv::Mat(cv::Size(outwidth_, outheight_), CV_8UC3);
+            img.forEach([&](cv::Vec3b &color, const int loc[]) -> void {
+                const auto p = cv::Point(loc[1], loc[0]);
+                int redish = 255.0 * expit(probs(p));
+                color = cv::Vec3b(0, 0, redish);
+            });
+            cv::imshow("model_output", img);
+        }
     }
 
     return ret;

@@ -27,6 +27,7 @@ std::ostream& operator<<(std::ostream& os, const BackgroundSelector::Image& i) {
 }
 
 void BackgroundSelector::loadImages() {
+    std::vector<Image> images;
     std::error_code ec;
     for (auto& p : std::filesystem::directory_iterator(image_dir_, ec)) {
         const auto& path = p.path();
@@ -46,7 +47,7 @@ void BackgroundSelector::loadImages() {
 
         auto i = Image{path.filename(), img};
         LOG(INFO) << "Loaded " << i;
-        images_.push_back(i);
+        images.push_back(i);
     }
 
     if (ec) {
@@ -54,10 +55,11 @@ void BackgroundSelector::loadImages() {
         return;
     }
 
-    std::sort(images_.begin(), images_.end(),
+    std::sort(images.begin(), images.end(),
               [](const BackgroundSelector::Image& a, const BackgroundSelector::Image& b) {
                   return a.filename < b.filename;
               });
+    images_ = images;
 }
 
 BackgroundSelector::BackgroundSelector(const std::string& image_dir, const std::string& color_list,

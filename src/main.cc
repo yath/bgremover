@@ -49,7 +49,23 @@ static int parseDebugFlags(const std::string& s) {
     return ret;
 }
 
+static void handleTerminate() {
+    auto ep = std::current_exception();
+    if (ep) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            LOG(FATAL) << "Uncaught exception: " << e.what();
+        } catch (...) {
+            LOG(FATAL) << "Uncaught exception (not an instance of std::exception)";
+        }
+    } else {
+        LOG(FATAL) << "std::terminate() called with std::current_exception==nullptr";
+    }
+}
+
 int main(int argc, char** argv) {
+    std::set_terminate(handleTerminate);
     FLAGS_v = 1;
     FLAGS_logtostderr = true;
     google::ParseCommandLineFlags(&argc, &argv, false);
@@ -57,7 +73,6 @@ int main(int argc, char** argv) {
     cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_INFO);
 
     debug_flags = parseDebugFlags(FLAGS_debug_flags);
-
 
     BackgroundRemover bgr(FLAGS_model_filename, FLAGS_model_type);
     cv::VideoCapture cap(FLAGS_input_device_number);

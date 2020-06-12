@@ -202,7 +202,6 @@ cv::Mat BackgroundRemover::getMaskFromOutput() {
     } else {
         cv::Mat_<float> probs = cv::Mat(cv::Size(outwidth_, outheight_), CV_32FC1, data);
         CHECK_EQ(size, probs.total() * probs.elemSize());
-        LOG(INFO) << "probs: " << probs;
         ret.forEach([&](unsigned char &bg_ratio, const int loc[]) -> void {
             const auto p = cv::Point(loc[1], loc[0]);
             if (threshold)

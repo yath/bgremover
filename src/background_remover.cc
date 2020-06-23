@@ -311,14 +311,10 @@ static void blendLayersTo(const cv::Mat &foreground,
     });
 }
 
-void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
-                                       const cv::Mat &maskImage /* rgb */,
-                                       bool do_blur_mask,
-                                       bool do_blend_layers,
-                                       Timing &t) {
-    auto start = Timing::now();
-
-    CHECK_EQ(frame.size, maskImage.size);
+cv::Mat BackgroundRemover::inferMask(const cv::Mat &frame /* rgb */,
+                                     bool do_blur_mask,
+                                     Timing &t) {
+    auto startPrepare = Timing::now();
     Padding pad;
     cv::Mat small = resizeAndPadTo(frame, width_, height_, pad);
 
@@ -335,12 +331,9 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
                                width_ * height_ * sizeof(float) * 3);
 
     auto startInference = Timing::now();
-    t.prepare_input += (startInference - start);
+    t.prepare_input += (startInference - startPrepare);
 
     TfLiteInterpreterInvoke(interpreter_);
-
-    auto startMask = Timing::now();
-    t.inference += (startMask - startInference);
 
     cv::Mat mask = getMaskFromOutput();
     if (small.size != mask.size) {
@@ -355,7 +348,23 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
         int blur_width = frame.cols / 64;
         cv::blur(mask, mask, cv::Size(blur_width, blur_width));
     }
+    auto endInference = Timing::now();
+    t.inference += (endInference - startInference);
+    return mask;
+}
 
+
+void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
+                                       const cv::Mat &maskImage /* rgb */,
+                                       bool do_blur_mask,
+                                       bool do_blend_layers,
+                                       Timing &t) {
+    auto start = Timing::now();
+
+    CHECK_EQ(frame.size, maskImage.size);
+    cv::Mat mask = inferMask(frame, do_blur_mask, t);
+
+    auto startMask = Timing::now();
     if (do_blend_layers) {
       blendLayersTo(/*foreground=*/frame, /*background=*/maskImage, mask, /*output=*/frame);
     } else {

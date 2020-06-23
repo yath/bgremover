@@ -33,6 +33,9 @@ class BackgroundRemover {
     static ModelType parseModelType(const std::string &model_type);
     cv::Mat makeInputTensor(const cv::Mat &img);
     cv::Mat getMaskFromOutput();
+    cv::Mat inferMask(const cv::Mat &frame /* rgb */,
+                      bool do_blur_mask,
+                      Timing &t);
 
    public:
     BackgroundRemover(const std::string &model_filename, const std::string &model_type,

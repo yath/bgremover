@@ -358,11 +358,17 @@ void BackgroundRemover::maskBackground(cv::Mat &frame /* rgb */,
                                        const cv::Mat &maskImage /* rgb */,
                                        bool do_blur_mask,
                                        bool do_blend_layers,
+                                       bool force_inference,
                                        Timing &t) {
     auto start = Timing::now();
 
     CHECK_EQ(frame.size, maskImage.size);
-    cv::Mat mask = inferMask(frame, do_blur_mask, t);
+
+    cv::Mat mask;
+    if (mask_cache.empty() || mask_cache.size != frame.size || force_inference) {
+      mask_cache = inferMask(frame, do_blur_mask, t);
+    }
+    mask = mask_cache;
 
     auto startMask = Timing::now();
     if (do_blend_layers) {

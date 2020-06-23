@@ -25,6 +25,8 @@ class BackgroundRemover {
     int width_, height_;
     const TfLiteTensor *output_;
     int outwidth_, outheight_;
+    // Cache an inferred mask.
+    cv::Mat mask_cache;
 
 #ifdef WITH_GL
     TfLiteDelegate *gpu_delegate_;
@@ -45,6 +47,7 @@ class BackgroundRemover {
     void maskBackground(cv::Mat &frame /* rgb */, const cv::Mat &maskImage /* rgb */,
                         bool do_blur_mask,
                         bool do_blend_layers,
+                        bool force_inference,
                         Timing &t);
 };
 #endif  // BACKGROUND_REMOVER_H

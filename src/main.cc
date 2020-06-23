@@ -31,6 +31,8 @@ DEFINE_string(color_list, "ff0000,00ff00,0000ff",
 DEFINE_string(debug_flags, "show_output_frame",
               "Comma-separated list of debug flags (see debug.h)");
 
+DEFINE_int32(inference_interval, 1, "Infer the mask every n'th frame.");
+
 static int parseDebugFlags(const std::string& s) {
     int ret = 0;
 
@@ -94,6 +96,7 @@ int main(int argc, char** argv) {
     bool do_blur_mask = true;
     bool do_blend_layers = false;
     bool is_frozen = false;
+    int frame_count = 0;
     while (1) {
         timing.nframes++;
         // The frame data is in BGR format.
@@ -101,6 +104,7 @@ int main(int argc, char** argv) {
             frozen_frame.copyTo(frame);
         else
             cap >> frame;
+            frame_count++;
 
         if (frame.empty()) {
             LOG(ERROR) << "Empty frame received";
@@ -108,8 +112,9 @@ int main(int argc, char** argv) {
         }
 	// Convert to RGB for deducing the mask and writing to the virtual camera.
         cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
+	bool force_inference = frame_count % FLAGS_inference_interval == 0;
         if (do_mask && !is_frozen)
-            bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, do_blend_layers, timing);
+            bgr.maskBackground(frame, bgs.getBackground(), do_blur_mask, do_blend_layers, force_inference, timing);
 
         // Frame is written as RGB to the virtual camera.
         wri.writeFrame(frame);
